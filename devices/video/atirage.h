@@ -88,9 +88,11 @@ private:
     void change_one_bar(uint32_t &aperture, uint32_t aperture_size,
                         uint32_t aperture_new, int bar_num);
 
+    uint32_t perform_mix_op(uint32_t src, uint32_t dst, uint8_t mix);
     void begin_drawing(uint32_t initiator, uint32_t value);
     void draw_rect(uint32_t width, uint32_t height);
     void fill_rect(uint32_t dst_width, uint32_t dst_height);
+    uint8_t get_bits_per_pel(uint8_t pix_width);
 
     uint32_t    regs[512] = {}; // internal registers
     uint8_t     plls[64]  = {}; // internal PLL registers

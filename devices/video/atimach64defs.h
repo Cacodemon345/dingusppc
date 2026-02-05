@@ -484,6 +484,7 @@ enum {
     ATI_SRC_HEIGHT2           = 0x06B, // 0x01AC
     ATI_SRC_HEIGHT2_WIDTH2    = 0x06C, // 0x01B0
     ATI_SRC_CNTL              = 0x06D, // 0x01B4
+        ATI_SRC_BLOCK_FILL_FCN = 13, ATI_SRC_BLOCK_FILL_FCN_size = 2,
     ATI_SCALE_OFF             = 0x070, // 0x01C0
     ATI_SCALE_WIDTH           = 0x077, // 0x01DC
     ATI_SCALE_HEIGHT          = 0x078, // 0x01E0
@@ -691,6 +692,10 @@ constexpr auto BE_FB_OFFSET  = 0x00800000U; // Offset to the big-endian frame bu
 constexpr auto MM_REGS_0_OFF = 0x007FFC00U; // offset to memory mapped registers, block 0
 constexpr auto MM_REGS_1_OFF = 0x007FF800U; // offset to memory mapped registers, block 1
 constexpr auto MM_REGS_2_OFF = 0x003FFC00U; // offset to memory mapped registers, 4MB aperture
+
+// Standalone register aperture.
+constexpr auto MM_STDL_REGS_0_OFF = 0x400U; // offset to memory mapped registers, block 0
+constexpr auto MM_STDL_REGS_1_OFF = 0x000U; // offset to memory mapped registers, block 1
 
 constexpr auto ATI_XTAL = 14318180.0f; // external crystal oscillator frequency
 
