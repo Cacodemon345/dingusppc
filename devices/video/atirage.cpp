@@ -1263,6 +1263,62 @@ void ATIRage::draw_rect(uint32_t width, uint32_t height) {
     }
 }
 
+void ATIRage::process_pixel(uint32_t pix, int& dst_x, int& dst_y, uint8_t mix)
+{
+    uint8_t dst_pix_fmt = extract_bits<uint32_t>(this->regs[ATI_DP_PIX_WIDTH], ATI_DP_DST_PIX_WIDTH,
+                                                 ATI_DP_DST_PIX_WIDTH_size);
+
+    // grab trajectory params
+    int dst_offs   = extract_bits<uint32_t>(this->regs[ATI_DST_OFF_PITCH], ATI_DST_OFFSET, ATI_DST_OFFSET_size);
+    int dst_pitch  = extract_bits<uint32_t>(this->regs[ATI_DST_OFF_PITCH], ATI_DST_PITCH, ATI_DST_PITCH_size);
+
+    int sc_left    = extract_bits<uint32_t>(this->regs[ATI_SC_LEFT], ATI_SC_LEFT_pos, ATI_SC_LEFT_size);
+    int sc_right   = extract_bits<uint32_t>(this->regs[ATI_SC_RIGHT], ATI_SC_RIGHT_pos, ATI_SC_RIGHT_size);
+    int sc_top     = extract_bits<uint32_t>(this->regs[ATI_SC_TOP], ATI_SC_TOP_pos, ATI_SC_TOP_size);
+    int sc_bottom  = extract_bits<uint32_t>(this->regs[ATI_SC_BOTTOM], ATI_SC_BOTTOM_pos, ATI_SC_BOTTOM_size);
+
+    dst_offs  *= 8;
+    dst_pitch *= get_bits_per_pel(dst_pix_fmt);
+
+    int x_inc = (this->regs[ATI_DST_CNTL] & 1) ? 1 : -1;
+    int y_inc = (this->regs[ATI_DST_CNTL] & 2) ? 1 : -1;
+
+    if (!(dst_x >= sc_left && dst_x <= sc_right && dst_y >= sc_top && dst_y <= sc_bottom)) {
+        return;
+    }
+    uint32_t write_msk = this->regs[ATI_DP_WRITE_MSK];
+
+    dst_offs += dst_y * dst_pitch;
+
+    x_inc *= get_bits_per_pel(dst_pix_fmt) / 8;
+
+    auto dst_ptr = &this->vram_ptr[(dst_offs + dst_x * x_inc) % this->vram_size];
+    switch (dst_pix_fmt) {
+        case 2:
+        case 8:
+        case 7:
+        {
+            *dst_ptr = (*dst_ptr & ~write_msk) | (perform_mix_op(pix, *dst_ptr, mix) & write_msk);
+            break;
+        }
+        case 3:
+        {
+            uint16_t dst_pix = BYTESWAP_16(*(uint16_t*)dst_ptr);
+            dst_pix = (dst_pix & ~write_msk) | (perform_mix_op(pix, dst_pix, mix) & write_msk);
+            *(uint16_t*)dst_ptr = BYTESWAP_16(dst_pix);
+            break;
+        }
+        case 6:
+        case 14:
+        {
+            uint32_t dst_pix = BYTESWAP_32(*(uint32_t*)dst_ptr);
+            dst_pix = (dst_pix & ~write_msk) | (perform_mix_op(pix, dst_pix, mix) & write_msk);
+            *(uint32_t*)dst_ptr = BYTESWAP_32(dst_pix);
+            break;
+        }
+    }
+}
+
 void ATIRage::fill_rect(uint32_t dst_width, uint32_t dst_height) {
     uint8_t frgd_src = extract_bits<uint32_t>(this->regs[ATI_DP_SRC], ATI_DP_FRGD_SRC, ATI_DP_FRGD_SRC_size);
     uint8_t frgd_mix = extract_bits<uint32_t>(this->regs[ATI_DP_MIX], ATI_DP_FRGD_MIX, ATI_DP_FRGD_MIX_size);
@@ -1288,15 +1344,8 @@ void ATIRage::fill_rect(uint32_t dst_width, uint32_t dst_height) {
     }
 
     // grab trajectory params
-    int dst_offs   = extract_bits<uint32_t>(this->regs[ATI_DST_OFF_PITCH], ATI_DST_OFFSET, ATI_DST_OFFSET_size);
-    int dst_pitch  = extract_bits<uint32_t>(this->regs[ATI_DST_OFF_PITCH], ATI_DST_PITCH, ATI_DST_PITCH_size);
     int dst_x      = extract_bits<uint32_t>(this->regs[ATI_DST_X], ATI_DST_X_pos, ATI_DST_X_size);
     int dst_y      = extract_bits<uint32_t>(this->regs[ATI_DST_Y], ATI_DST_Y_pos, ATI_DST_Y_size);
-
-    int sc_left    = extract_bits<uint32_t>(this->regs[ATI_SC_LEFT], ATI_SC_LEFT_pos, ATI_SC_LEFT_size);
-    int sc_right   = extract_bits<uint32_t>(this->regs[ATI_SC_RIGHT], ATI_SC_RIGHT_pos, ATI_SC_RIGHT_size);
-    int sc_top     = extract_bits<uint32_t>(this->regs[ATI_SC_TOP], ATI_SC_TOP_pos, ATI_SC_TOP_size);
-    int sc_bottom  = extract_bits<uint32_t>(this->regs[ATI_SC_BOTTOM], ATI_SC_BOTTOM_pos, ATI_SC_BOTTOM_size);
 
     if (dst_x & 0x1000) {
         dst_x |= ~0xFFF;
@@ -1305,53 +1354,17 @@ void ATIRage::fill_rect(uint32_t dst_width, uint32_t dst_height) {
         dst_y |= ~0x3FFF;
     }
 
-    dst_offs  *= 8;
-    dst_pitch *= get_bits_per_pel(dst_pix_fmt);
-
     int x_inc = (this->regs[ATI_DST_CNTL] & 1) ? 1 : -1;
     int y_inc = (this->regs[ATI_DST_CNTL] & 2) ? 1 : -1;
-
-    uint32_t write_msk = this->regs[ATI_DP_WRITE_MSK];
     uint32_t pix = frgd_src == 0 ? this->regs[ATI_DP_BKGD_CLR] : this->regs[ATI_DP_FRGD_CLR];
 
-    uint8_t* dst_ptr = nullptr;
-    dst_offs += dst_y * dst_pitch;
-
-    dst_pitch *= y_inc;
     x_inc *= get_bits_per_pel(dst_pix_fmt) / 8;
 
     for (int y = 0; y < dst_height; y++) {
         for (int x = 0; x < dst_width; x++) {
             int xx = (x * ((this->regs[ATI_DST_CNTL] & 1) ? 1 : -1)) + dst_x;
             int yy = (y * ((this->regs[ATI_DST_CNTL] & 2) ? 1 : -1)) + dst_y;
-            if (!(xx >= sc_left && xx <= sc_right && yy >= sc_top && yy <= sc_bottom)) {
-                continue;
-            }
-            dst_ptr = &this->vram_ptr[(dst_offs + y * dst_pitch + (x + dst_x) * x_inc) % this->vram_size];
-            switch (dst_pix_fmt) {
-                case 2:
-                case 8:
-                case 7:
-                {
-                    *dst_ptr = (*dst_ptr & ~write_msk) | (perform_mix_op(pix, *dst_ptr, frgd_mix) & write_msk);
-                    break;
-                }
-                case 3:
-                {
-                    uint16_t dst_pix = BYTESWAP_16(*(uint16_t*)dst_ptr);
-                    dst_pix = (dst_pix & ~write_msk) | (perform_mix_op(pix, dst_pix, frgd_mix) & write_msk);
-                    *(uint16_t*)dst_ptr = BYTESWAP_16(dst_pix);
-                    break;
-                }
-                case 6:
-                case 14:
-                {
-                    uint32_t dst_pix = BYTESWAP_32(*(uint32_t*)dst_ptr);
-                    dst_pix = (dst_pix & ~write_msk) | (perform_mix_op(pix, dst_pix, frgd_mix) & write_msk);
-                    *(uint32_t*)dst_ptr = BYTESWAP_32(dst_pix);
-                    break;
-                }
-            }
+            process_pixel(pix, xx, yy, frgd_mix);
         }
     }
 }

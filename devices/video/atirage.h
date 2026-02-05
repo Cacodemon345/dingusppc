@@ -92,6 +92,7 @@ private:
     void begin_drawing(uint32_t initiator, uint32_t value);
     void draw_rect(uint32_t width, uint32_t height);
     void fill_rect(uint32_t dst_width, uint32_t dst_height);
+    void process_pixel(uint32_t pix, int& dst_x, int& dst_y, uint8_t mix);
     uint8_t get_bits_per_pel(uint8_t pix_width);
 
     uint32_t    regs[512] = {}; // internal registers
@@ -123,6 +124,12 @@ private:
     uint8_t     dac_mask     = 0;  // current DAC mask
     int         comp_index   = 0;  // current color component index
     uint8_t     color_buf[3] = {}; // buffer for storing DAC color components
+
+    // Accel state (for host-driven blits)
+    int32_t dst_x;
+    int32_t dst_y;
+    int32_t src_x;
+    int32_t src_y;
 };
 
 #endif // ATI_RAGE_H
