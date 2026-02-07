@@ -343,6 +343,7 @@ enum {
         ATI_LOW_LATENCY_MODE    = 21,                                   // VT/GT
         ATI_CDE_PULLBACK        = 22,                                   // VT/GT
         ATI_MEM_PIX_WIDTH       = 24, ATI_MEM_PIX_WIDTH_size = 3,       // VT/GT
+        ATI_UPPER_APER_ENDIAN   = 26, ATI_UPPER_APER_ENDIAN_size = 2,   // VT/GT
         ATI_MEM_OE_SELECT       = 27, ATI_MEM_OE_SELECT_size = 2,       // VT/GT
 
     ATI_MEM_VGA_WP_SEL        = 0x02D, // 0x00B4
@@ -471,6 +472,9 @@ enum {
     ATI_Z_CNTL                = 0x053, // 0x014C
     ATI_ALPHA_TST_CNTL        = 0x054, // 0x0150
     ATI_SRC_OFF_PITCH         = 0x060, // 0x0180
+        ATI_SRC_OFFSET  =  0, ATI_SRC_OFFSET_size = 20,
+        ATI_SRC_PITCH   = 22, ATI_SRC_PITCH_size  = 10,
+
     ATI_SRC_X                 = 0x061, // 0x0184
     ATI_SRC_Y                 = 0x062, // 0x0188
     ATI_SRC_Y_X               = 0x063, // 0x018C

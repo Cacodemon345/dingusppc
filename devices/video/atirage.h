@@ -93,6 +93,7 @@ private:
     void draw_rect(uint32_t width, uint32_t height);
     void fill_rect(uint32_t dst_width, uint32_t dst_height);
     void process_pixel(uint32_t pix, int& dst_x, int& dst_y, uint8_t mix);
+    uint32_t fetch_source(int32_t& src_x, int32_t& src_y, int dst_x, int dst_y, uint8_t source_type, uint8_t& mix);
     uint8_t get_bits_per_pel(uint8_t pix_width);
 
     uint32_t    regs[512] = {}; // internal registers
@@ -126,10 +127,17 @@ private:
     uint8_t     color_buf[3] = {}; // buffer for storing DAC color components
 
     // Accel state (for host-driven blits)
-    int32_t dst_x;
-    int32_t dst_y;
-    int32_t src_x;
-    int32_t src_y;
+    int32_t  dst_x;
+    int32_t  dst_y;
+    int32_t  src_x;
+    int32_t  src_y;
+    uint32_t src_width;
+    uint32_t src_height;
+
+    uint32_t host_data;
+    uint8_t  host_data_req; // How many bits of host data is required.
+    uint8_t  host_data_pos; // Position of host data.
+    uint8_t  host_data_active;
 };
 
 #endif // ATI_RAGE_H

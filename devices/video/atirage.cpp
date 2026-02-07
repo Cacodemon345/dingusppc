@@ -745,16 +745,29 @@ bool ATIRage::pci_io_write(uint32_t offset, uint32_t value, uint32_t size) {
 
 uint32_t ATIRage::read(uint32_t rgn_start, uint32_t offset, int size)
 {
+    bool swap = !needs_swap_endian();
+
     if (rgn_start == this->aperture_base[0] && offset < this->aperture_size[0]) {
         if (offset < this->framebuffer_size) { // little-endian VRAM region
-            return read_mem(&this->vram_ptr[offset], size);
+            return swap ? read_mem(&this->vram_ptr[offset], size) : read_mem_rev(&this->vram_ptr[offset], size);
         }
         if (offset >= BE_FB_OFFSET) { // big-endian VRAM region
-            return read_mem(&this->vram_ptr[uint64_t(offset) - BE_FB_OFFSET], size);
+
+            switch ((this->regs[ATI_MEM_CNTL] >> ATI_UPPER_APER_ENDIAN) & 3) {
+                case 0:
+                    return swap ? read_mem(&this->vram_ptr[offset & (BE_FB_OFFSET - 1)], size) : read_mem_rev(&this->vram_ptr[offset & (BE_FB_OFFSET - 1)], size);
+                case 1:
+                    if (size == 4) {
+                        uint32_t val = swap ? read_mem_rev(&this->vram_ptr[uint64_t(offset) - BE_FB_OFFSET], size) : read_mem(&this->vram_ptr[uint64_t(offset) - BE_FB_OFFSET], size);
+                        return ((val & 0xFFFF) << 16) | (val >> 16);
+                    }
+                    break;
+            }
+            return swap ? read_mem_rev(&this->vram_ptr[uint64_t(offset) - BE_FB_OFFSET], size) : read_mem(&this->vram_ptr[uint64_t(offset) - BE_FB_OFFSET], size);
         }
         //if (!bit_set(this->regs[ATI_BUS_CNTL], ATI_BUS_APER_REG_DIS)) {
             if (offset >= MM_REGS_0_OFF) { // memory-mapped registers, block 0
-                uint32_t value = BYTESWAP_SIZED(this->read_reg(offset & 0x3FF, size), size);
+                uint32_t value = swap ? BYTESWAP_SIZED(this->read_reg(offset & 0x3FF, size), size) : this->read_reg(offset & 0x3FF, size);
 #if 0
                 if ((offset & 0x3ff) < (ATI_GP_IO * 4) || (offset & 0x3ff) > (ATI_GP_IO * 4) + 4) {
                     LOG_F(INFO, "%s: Read: offset=%x, value=%x, size=%x", this->get_name_and_unit_address().c_str(),
@@ -766,7 +779,7 @@ uint32_t ATIRage::read(uint32_t rgn_start, uint32_t offset, int size)
             if (offset >= MM_REGS_1_OFF
                 //&& bit_set(this->regs[ATI_BUS_CNTL], ATI_BUS_EXT_REG_EN)
             ) { // memory-mapped registers, block 1
-                uint32_t value = BYTESWAP_SIZED(this->read_reg((offset & 0x3FF) + 0x400, size), size);
+                uint32_t value = swap ? BYTESWAP_SIZED(this->read_reg((offset & 0x3FF) + 0x400, size), size) : this->read_reg((offset & 0x3FF) + 0x400, size);
 #if 0
                 if (((offset & 0x3ff) + 0x400) < (ATI_GP_IO * 4) || ((offset & 0x3ff) + 0x400) > (ATI_GP_IO * 4) + 4) {
                     LOG_F(INFO, "%s: Read: offset=%x, value=%x, size=%x", this->get_name_and_unit_address().c_str(),
@@ -789,10 +802,10 @@ uint32_t ATIRage::read(uint32_t rgn_start, uint32_t offset, int size)
         // instead.
         offset &= 0x7ff;
         if (offset >= MM_STDL_REGS_0_OFF) {
-            return BYTESWAP_SIZED(this->read_reg(offset & 0x3FF, size), size);
+            return swap ? BYTESWAP_SIZED(this->read_reg(offset & 0x3FF, size), size) : this->read_reg(offset & 0x3FF, size);
         }
         // Rest of the region is Block 1.
-        return BYTESWAP_SIZED(this->read_reg((offset & 0x3FF) + 0x400, size), size);
+        return swap ? BYTESWAP_SIZED(this->read_reg((offset & 0x3FF) + 0x400, size), size) : this->read_reg((offset & 0x3FF) + 0x400, size);
     }
 
     return PCIBase::read(rgn_start, offset, size);
@@ -800,13 +813,25 @@ uint32_t ATIRage::read(uint32_t rgn_start, uint32_t offset, int size)
 
 void ATIRage::write(uint32_t rgn_start, uint32_t offset, uint32_t value, int size)
 {
+    if (!needs_swap_endian())
+        value = BYTESWAP_SIZED(value, size);
+
     if (rgn_start == this->aperture_base[0] && offset < this->aperture_size[0]) {
         if (offset < this->framebuffer_size) { // little-endian VRAM region
             draw_fb = true;
-            return write_mem(&this->vram_ptr[offset], value, size);
+            return write_mem_rev(&this->vram_ptr[offset], value, size);
         }
         if (offset >= BE_FB_OFFSET) { // big-endian VRAM region
             draw_fb = true;
+            switch ((this->regs[ATI_MEM_CNTL] >> ATI_UPPER_APER_ENDIAN) & 3) {
+                case 0:
+                    return write_mem_rev(&this->vram_ptr[offset & (BE_FB_OFFSET - 1)], value, size);
+                case 1:
+                    if (size == 4) {
+                        return write_mem(&this->vram_ptr[offset & (BE_FB_OFFSET - 1)], (((value & 0xFFFF) << 16) | (value >> 16)), size);
+                    }
+                    break;
+            }
             return write_mem(&this->vram_ptr[offset & (BE_FB_OFFSET - 1)], value, size);
         }
         //if (!bit_set(this->regs[ATI_BUS_CNTL], ATI_BUS_APER_REG_DIS)) {
@@ -818,7 +843,7 @@ void ATIRage::write(uint32_t rgn_start, uint32_t offset, uint32_t value, int siz
                     );
                 }
 #endif
-                return this->write_reg(offset & 0x3FF, BYTESWAP_SIZED(value, size), size);
+                return this->write_reg(offset & 0x3FF, value, size);
             }
             if (offset >= MM_REGS_1_OFF
                 //&& bit_set(this->regs[ATI_BUS_CNTL], ATI_BUS_EXT_REG_EN)
@@ -831,8 +856,7 @@ void ATIRage::write(uint32_t rgn_start, uint32_t offset, uint32_t value, int siz
                     );
                 }
 #endif
-                return this->write_reg((offset & 0x3FF) + 0x400,
-                                        BYTESWAP_SIZED(value, size), size);
+                return this->write_reg((offset & 0x3FF) + 0x400, value, size);
             }
         //}
         LOG_F(WARNING, "%s: write unmapped aperture[0] region %08x.%c = %0*x",
@@ -844,9 +868,9 @@ void ATIRage::write(uint32_t rgn_start, uint32_t offset, uint32_t value, int siz
         // See the note about wrap around above.
         offset &= 0x7ff;
         if (offset >= MM_STDL_REGS_0_OFF) {
-            return this->write_reg(offset & 0x3FF, BYTESWAP_SIZED(value, size), size);
+            return this->write_reg(offset & 0x3FF, value, size);
         }
-        return this->write_reg((offset & 0x3FF) + 0x400, BYTESWAP_SIZED(value, size), size);
+        return this->write_reg((offset & 0x3FF) + 0x400, value, size);
     }
 
     LOG_F(WARNING, "%s: write unmapped aperture region %08x.%c = %0*x",
@@ -1022,13 +1046,13 @@ void ATIRage::crtc_update() {
     case 3:
         this->convert_fb_cb = [this](uint8_t *dst_buf, int dst_pitch) {
             draw_fb = false;
-            this->convert_frame_15bpp<BE>(dst_buf, dst_pitch);
+            this->convert_frame_15bpp<LE>(dst_buf, dst_pitch, true);
         };
         break;
     case 4:
         this->convert_fb_cb = [this](uint8_t *dst_buf, int dst_pitch) {
             draw_fb = false;
-            this->convert_frame_16bpp<LE>(dst_buf, dst_pitch);
+            this->convert_frame_16bpp<LE>(dst_buf, dst_pitch, true);
         };
         break;
     case 5:
@@ -1040,7 +1064,7 @@ void ATIRage::crtc_update() {
     case 6:
         this->convert_fb_cb = [this](uint8_t *dst_buf, int dst_pitch) {
             draw_fb = false;
-            this->convert_frame_32bpp<BE>(dst_buf, dst_pitch);
+            this->convert_frame_32bpp<LE>(dst_buf, dst_pitch, true);
         };
         break;
     default:
@@ -1263,6 +1287,53 @@ void ATIRage::draw_rect(uint32_t width, uint32_t height) {
     }
 }
 
+uint32_t ATIRage::fetch_source(int32_t& src_x, int32_t& src_y, int dst_x, int dst_y, uint8_t source_type, uint8_t& mix)
+{
+    /*
+    Monochrome sources do not have a separate pitch and offset register.
+    If those are used, non-monochrome sources can't use data from memory
+    unless those are also 1-bit.
+    */
+    uint8_t src_sel     = 1; // foreground.
+    uint8_t frgd_src    = extract_bits<uint32_t>(this->regs[ATI_DP_SRC], ATI_DP_FRGD_SRC, ATI_DP_FRGD_SRC_size);
+    uint8_t bkgd_src    = extract_bits<uint32_t>(this->regs[ATI_DP_SRC], ATI_DP_BKGD_SRC, ATI_DP_BKGD_SRC_size);
+    uint8_t frgd_mix    = extract_bits<uint32_t>(this->regs[ATI_DP_MIX], ATI_DP_FRGD_MIX, ATI_DP_FRGD_MIX_size);
+    uint8_t bkgd_mix    = extract_bits<uint32_t>(this->regs[ATI_DP_MIX], ATI_DP_BKGD_MIX, ATI_DP_BKGD_MIX_size);
+    uint8_t mono_src    = extract_bits<uint32_t>(this->regs[ATI_DP_SRC], ATI_DP_MONO_SRC, ATI_DP_MONO_SRC_size);
+    uint8_t src_pix_fmt = extract_bits<uint32_t>(this->regs[ATI_DP_PIX_WIDTH], ATI_DP_SRC_PIX_WIDTH,
+                                                 ATI_DP_SRC_PIX_WIDTH_size);
+    // grab trajectory params
+    int src_offs   = extract_bits<uint32_t>(this->regs[ATI_SRC_OFF_PITCH], ATI_SRC_OFFSET, ATI_SRC_OFFSET_size);
+    int src_pitch  = extract_bits<uint32_t>(this->regs[ATI_SRC_OFF_PITCH], ATI_SRC_PITCH, ATI_SRC_PITCH_size);
+    src_offs      *= 8;
+    src_pitch     *= get_bits_per_pel(src_pix_fmt);
+    int x_inc      = (this->regs[ATI_DST_CNTL] & 1) ? 1 : -1;
+
+    auto src_ptr = &this->vram_ptr[(src_offs + src_x * x_inc) % this->vram_size];
+    mix = frgd_mix;
+
+    if (mono_src != 0) {
+        switch (mono_src) {
+            case 1: {
+                uint64_t mono_val = regs[ATI_PAT_REG0] | ((uint64_t)regs[ATI_PAT_REG1]) << 32ull;
+                src_sel = mono_val & !!(1ull << (((dst_y & 7) * 8) + (7 - (dst_x & 7))));
+                break;
+            }
+            case 2: {
+                src_sel = this->host_data & 1;
+                break;
+            }
+            case 3: {
+                auto mono_ptr = &((uint64_t*)&this->vram_ptr)[src_offs / 8];
+                src_sel = (*(mono_ptr + (dst_y / 8) * (src_pitch / 8))) & !!(1ull << (((dst_y & 7) * 8) + (7 - (dst_x & 7))));
+                break;
+            }
+        }
+    }
+
+    mix = src_sel ? frgd_mix : bkgd_mix;
+}
+
 void ATIRage::process_pixel(uint32_t pix, int& dst_x, int& dst_y, uint8_t mix)
 {
     uint8_t dst_pix_fmt = extract_bits<uint32_t>(this->regs[ATI_DP_PIX_WIDTH], ATI_DP_DST_PIX_WIDTH,
@@ -1303,17 +1374,17 @@ void ATIRage::process_pixel(uint32_t pix, int& dst_x, int& dst_y, uint8_t mix)
         }
         case 3:
         {
-            uint16_t dst_pix = BYTESWAP_16(*(uint16_t*)dst_ptr);
+            uint16_t dst_pix = *(uint16_t*)dst_ptr;
             dst_pix = (dst_pix & ~write_msk) | (perform_mix_op(pix, dst_pix, mix) & write_msk);
-            *(uint16_t*)dst_ptr = BYTESWAP_16(dst_pix);
+            *(uint16_t*)dst_ptr = dst_pix;
             break;
         }
         case 6:
         case 14:
         {
-            uint32_t dst_pix = BYTESWAP_32(*(uint32_t*)dst_ptr);
+            uint32_t dst_pix = *(uint32_t*)dst_ptr;
             dst_pix = (dst_pix & ~write_msk) | (perform_mix_op(pix, dst_pix, mix) & write_msk);
-            *(uint32_t*)dst_ptr = BYTESWAP_32(dst_pix);
+            *(uint32_t*)dst_ptr = dst_pix;
             break;
         }
     }
