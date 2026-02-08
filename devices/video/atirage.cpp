@@ -745,29 +745,29 @@ bool ATIRage::pci_io_write(uint32_t offset, uint32_t value, uint32_t size) {
 
 uint32_t ATIRage::read(uint32_t rgn_start, uint32_t offset, int size)
 {
-    bool swap = !needs_swap_endian();
+    bool swap = true;
 
     if (rgn_start == this->aperture_base[0] && offset < this->aperture_size[0]) {
         if (offset < this->framebuffer_size) { // little-endian VRAM region
-            return swap ? read_mem(&this->vram_ptr[offset], size) : read_mem_rev(&this->vram_ptr[offset], size);
+            return read_mem(&this->vram_ptr[offset], size);
         }
         if (offset >= BE_FB_OFFSET) { // big-endian VRAM region
 
             switch ((this->regs[ATI_MEM_CNTL] >> ATI_UPPER_APER_ENDIAN) & 3) {
                 case 0:
-                    return swap ? read_mem(&this->vram_ptr[offset & (BE_FB_OFFSET - 1)], size) : read_mem_rev(&this->vram_ptr[offset & (BE_FB_OFFSET - 1)], size);
+                    return read_mem(&this->vram_ptr[offset & (BE_FB_OFFSET - 1)], size);
                 case 1:
                     if (size == 4) {
-                        uint32_t val = swap ? read_mem_rev(&this->vram_ptr[uint64_t(offset) - BE_FB_OFFSET], size) : read_mem(&this->vram_ptr[uint64_t(offset) - BE_FB_OFFSET], size);
+                        uint32_t val = read_mem_rev(&this->vram_ptr[uint64_t(offset) - BE_FB_OFFSET], size);
                         return ((val & 0xFFFF) << 16) | (val >> 16);
                     }
                     break;
             }
-            return swap ? read_mem_rev(&this->vram_ptr[uint64_t(offset) - BE_FB_OFFSET], size) : read_mem(&this->vram_ptr[uint64_t(offset) - BE_FB_OFFSET], size);
+            return read_mem_rev(&this->vram_ptr[uint64_t(offset) - BE_FB_OFFSET], size);
         }
         //if (!bit_set(this->regs[ATI_BUS_CNTL], ATI_BUS_APER_REG_DIS)) {
             if (offset >= MM_REGS_0_OFF) { // memory-mapped registers, block 0
-                uint32_t value = swap ? BYTESWAP_SIZED(this->read_reg(offset & 0x3FF, size), size) : this->read_reg(offset & 0x3FF, size);
+                uint32_t value = BYTESWAP_SIZED(this->read_reg(offset & 0x3FF, size), size);
 #if 0
                 if ((offset & 0x3ff) < (ATI_GP_IO * 4) || (offset & 0x3ff) > (ATI_GP_IO * 4) + 4) {
                     LOG_F(INFO, "%s: Read: offset=%x, value=%x, size=%x", this->get_name_and_unit_address().c_str(),
@@ -779,7 +779,7 @@ uint32_t ATIRage::read(uint32_t rgn_start, uint32_t offset, int size)
             if (offset >= MM_REGS_1_OFF
                 //&& bit_set(this->regs[ATI_BUS_CNTL], ATI_BUS_EXT_REG_EN)
             ) { // memory-mapped registers, block 1
-                uint32_t value = swap ? BYTESWAP_SIZED(this->read_reg((offset & 0x3FF) + 0x400, size), size) : this->read_reg((offset & 0x3FF) + 0x400, size);
+                uint32_t value = BYTESWAP_SIZED(this->read_reg((offset & 0x3FF) + 0x400, size), size);
 #if 0
                 if (((offset & 0x3ff) + 0x400) < (ATI_GP_IO * 4) || ((offset & 0x3ff) + 0x400) > (ATI_GP_IO * 4) + 4) {
                     LOG_F(INFO, "%s: Read: offset=%x, value=%x, size=%x", this->get_name_and_unit_address().c_str(),
@@ -802,10 +802,10 @@ uint32_t ATIRage::read(uint32_t rgn_start, uint32_t offset, int size)
         // instead.
         offset &= 0x7ff;
         if (offset >= MM_STDL_REGS_0_OFF) {
-            return swap ? BYTESWAP_SIZED(this->read_reg(offset & 0x3FF, size), size) : this->read_reg(offset & 0x3FF, size);
+            return BYTESWAP_SIZED(this->read_reg(offset & 0x3FF, size), size);
         }
         // Rest of the region is Block 1.
-        return swap ? BYTESWAP_SIZED(this->read_reg((offset & 0x3FF) + 0x400, size), size) : this->read_reg((offset & 0x3FF) + 0x400, size);
+        return BYTESWAP_SIZED(this->read_reg((offset & 0x3FF) + 0x400, size), size);
     }
 
     return PCIBase::read(rgn_start, offset, size);
@@ -813,8 +813,7 @@ uint32_t ATIRage::read(uint32_t rgn_start, uint32_t offset, int size)
 
 void ATIRage::write(uint32_t rgn_start, uint32_t offset, uint32_t value, int size)
 {
-    if (!needs_swap_endian())
-        value = BYTESWAP_SIZED(value, size);
+    value = BYTESWAP_SIZED(value, size);
 
     if (rgn_start == this->aperture_base[0] && offset < this->aperture_size[0]) {
         if (offset < this->framebuffer_size) { // little-endian VRAM region
