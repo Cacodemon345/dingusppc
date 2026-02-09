@@ -482,7 +482,9 @@ enum {
     ATI_SRC_HEIGHT1           = 0x065, // 0x0194
     ATI_SRC_HEIGHT1_WIDTH1    = 0x066, // 0x0198
     ATI_SRC_X_START           = 0x067, // 0x019C
+        ATI_SRC_X_START_pos = 0, ATI_SRC_X_START_size = 13,
     ATI_SRC_Y_START           = 0x068, // 0x01A0
+        ATI_SRC_Y_START_pos = 0, ATI_SRC_Y_START_size = 14,
     ATI_SRC_Y_X_START         = 0x069, // 0x01A4
     ATI_SRC_WIDTH2            = 0x06A, // 0x01A8
     ATI_SRC_HEIGHT2           = 0x06B, // 0x01AC

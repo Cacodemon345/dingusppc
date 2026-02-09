@@ -252,6 +252,38 @@ uint32_t ATIRage::read_reg(uint32_t reg_offset, uint32_t size) {
     if (reg_num == ATI_DST_Y_X_ALIAS1)
         reg_num = ATI_DST_Y_X;
 
+    if (reg_num == ATI_GUI_TRAJ_CNTL) {
+        result = this->regs[ATI_DST_CNTL] & 0xFFFF;
+        result |= (this->regs[ATI_SRC_CNTL] & 0xFF) << 16;
+        result |= (this->regs[ATI_PAT_CNTL] & 7) << 24;
+        result |= (this->regs[ATI_HOST_CNTL] & 3) << 28;
+    }
+
+    if (reg_num == ATI_SRC_HEIGHT1_WIDTH1) {
+        result = this->regs[ATI_SRC_WIDTH1];
+        result |= this->regs[ATI_SRC_HEIGHT1] << 16;
+    }
+
+    if (reg_num == ATI_SRC_HEIGHT2_WIDTH2) {
+        result = this->regs[ATI_SRC_WIDTH2];
+        result |= this->regs[ATI_SRC_HEIGHT2] << 16;
+    }
+
+    if (reg_num == ATI_DST_Y_X) {
+        result = this->regs[ATI_DST_Y];
+        result |= this->regs[ATI_DST_X] << 16;
+    }
+    
+    if (reg_num == ATI_SRC_Y_X) {
+        result = this->regs[ATI_SRC_Y];
+        result |= this->regs[ATI_SRC_X] << 16;
+    }
+    
+    if (reg_num == ATI_SRC_Y_X_START) {
+        result = this->regs[ATI_SRC_Y_START];
+        result |= this->regs[ATI_SRC_X_START] << 16;
+    }
+
     switch (reg_num) {
     case ATI_CLOCK_CNTL:
         if (offset <= 2 && offset + size > 2) {
@@ -326,7 +358,7 @@ uint32_t ATIRage::read_reg(uint32_t reg_offset, uint32_t size) {
         result = extract_bits<uint64_t>(result, offset * 8, size * 8);
     }
 
-    if (reg_num != ATI_CRTC_INT_CNTL && reg_num != ATI_GP_IO)
+    if (reg_num != ATI_CRTC_INT_CNTL && reg_num != ATI_GP_IO && reg_num != ATI_DAC_REGS)
         LOG_F(ATIRAGE, "%s: read  %s %04x.%c = %0*x", this->get_name_and_unit_address().c_str(),
             get_reg_name(reg_num), reg_offset, SIZE_ARG(size), size * 2, (uint32_t)result);
     return static_cast<uint32_t>(result);
@@ -343,7 +375,8 @@ uint32_t ATIRage::read_reg(uint32_t reg_offset, uint32_t size) {
 #define WRITE_VALUE_AND_LOG(level) \
     do { \
         this->regs[reg_num] = new_value; \
-        LOG_VALUE(level); \
+        if (reg_num != ATI_GP_IO && reg_num != ATI_CRTC_INT_CNTL && reg_num != ATI_DAC_REGS) \
+            LOG_VALUE(level); \
     } while (0)
 
 void ATIRage::write_reg(uint32_t reg_offset, uint32_t value, uint32_t size) {
@@ -354,6 +387,38 @@ void ATIRage::write_reg(uint32_t reg_offset, uint32_t value, uint32_t size) {
 
     if (reg_num == ATI_DST_Y_X_ALIAS1)
         reg_num = ATI_DST_Y_X;
+
+    if (reg_num == ATI_GUI_TRAJ_CNTL) {
+        old_value = this->regs[ATI_DST_CNTL] & 0xFFFF;
+        old_value |= (this->regs[ATI_SRC_CNTL] & 0xFF) << 16;
+        old_value |= (this->regs[ATI_PAT_CNTL] & 7) << 24;
+        old_value |= (this->regs[ATI_HOST_CNTL] & 3) << 28;
+    }
+
+    if (reg_num == ATI_SRC_HEIGHT1_WIDTH1) {
+        old_value = this->regs[ATI_SRC_WIDTH1];
+        old_value |= this->regs[ATI_SRC_HEIGHT1] << 16;
+    }
+
+    if (reg_num == ATI_SRC_HEIGHT2_WIDTH2) {
+        old_value = this->regs[ATI_SRC_WIDTH2];
+        old_value |= this->regs[ATI_SRC_HEIGHT2] << 16;
+    }
+
+    if (reg_num == ATI_DST_Y_X) {
+        old_value = this->regs[ATI_DST_Y];
+        old_value |= this->regs[ATI_DST_X] << 16;
+    }
+
+    if (reg_num == ATI_SRC_Y_X) {
+        old_value = this->regs[ATI_SRC_Y];
+        old_value |= this->regs[ATI_SRC_X] << 16;
+    }
+    
+    if (reg_num == ATI_SRC_Y_X_START) {
+        old_value = this->regs[ATI_SRC_Y_START];
+        old_value |= this->regs[ATI_SRC_X_START] << 16;
+    }
 
     if (offset || size != 4) { // slow path
         if ((offset + size) > 4) {
@@ -669,6 +734,34 @@ void ATIRage::write_reg(uint32_t reg_offset, uint32_t value, uint32_t size) {
         WRITE_VALUE_AND_LOG(ATIRAGE);
         return;
 
+    case ATI_SRC_HEIGHT2_WIDTH2:
+        insert_bits(this->regs[ATI_SRC_WIDTH2], extract_bits(value, 16, 16), 0, 16);
+        insert_bits(this->regs[ATI_SRC_HEIGHT2], extract_bits(value, 0, 16), 0, 16);
+        new_value = value;
+        WRITE_VALUE_AND_LOG(ATIRAGE);
+        return;
+
+    case ATI_SRC_HEIGHT1_WIDTH1:
+        insert_bits(this->regs[ATI_SRC_WIDTH1], extract_bits(value, 16, 16), 0, 16);
+        insert_bits(this->regs[ATI_SRC_HEIGHT1], extract_bits(value, 0, 16), 0, 16);
+        new_value = value;
+        WRITE_VALUE_AND_LOG(ATIRAGE);
+        return;
+
+    case ATI_SRC_Y_X:
+        insert_bits(this->regs[ATI_SRC_X], extract_bits(value, 16, 16), 0, 16);
+        insert_bits(this->regs[ATI_SRC_Y], extract_bits(value, 0, 16), 0, 16);
+        new_value = value;
+        WRITE_VALUE_AND_LOG(ATIRAGE);
+        return;
+
+    case ATI_SRC_Y_X_START:
+        insert_bits(this->regs[ATI_SRC_X_START], extract_bits(value, 16, ATI_SRC_X_START_size), 0, ATI_DST_X_size);
+        insert_bits(this->regs[ATI_SRC_Y_START], extract_bits(value, 0, ATI_SRC_Y_START_size), 0, ATI_DST_Y_size);
+        new_value = value;
+        WRITE_VALUE_AND_LOG(ATIRAGE);
+        return;
+
     case ATI_SC_TOP_BOTTOM:
         insert_bits(this->regs[ATI_SC_TOP], extract_bits(value, 0, ATI_SC_TOP_size), 0, ATI_SC_TOP_size);
         insert_bits(this->regs[ATI_SC_BOTTOM], extract_bits(value, 16, ATI_SC_BOTTOM_size), 0, ATI_SC_BOTTOM_size);
@@ -682,11 +775,20 @@ void ATIRage::write_reg(uint32_t reg_offset, uint32_t value, uint32_t size) {
         WRITE_VALUE_AND_LOG(ATIRAGE);
         return;
     
+    case ATI_DP_SET_GUI_ENGINE:
+    case ATI_DP_SET_GUI_ENGINE2:
+        WRITE_VALUE_AND_LOG(WARNING);
+        break;
+    
     case ATI_GUI_TRAJ_CNTL:
-        insert_bits(this->regs[ATI_DST_CNTL], extract_bits(value, 0, 16), 0, 16);
-        insert_bits(this->regs[ATI_SRC_CNTL], extract_bits(value, 16, 8), 0, 8);
-        insert_bits(this->regs[ATI_PAT_CNTL], extract_bits(value, 24, 3), 0, 3);
-        insert_bits(this->regs[ATI_HOST_CNTL], extract_bits(value, 28, 2), 0, 2);
+        this->regs[ATI_DST_CNTL] &= ~0xFFFF;
+        this->regs[ATI_DST_CNTL] |= value & 0xFFFF;
+        this->regs[ATI_SRC_CNTL] &= ~0xFF;
+        this->regs[ATI_SRC_CNTL] |= (value >> 16) & 0xFF;
+        this->regs[ATI_PAT_CNTL] &= ~0x7;
+        this->regs[ATI_PAT_CNTL] |= (value >> 24) & 0x7;;
+        this->regs[ATI_HOST_CNTL] &= ~0x3;
+        this->regs[ATI_HOST_CNTL] |= (value >> 28) & 0x3;
         new_value = value;
         WRITE_VALUE_AND_LOG(ATIRAGE);
         return;
@@ -1180,6 +1282,10 @@ void ATIRage::update_display_connection()
 // =================================== Draw Engine =====================================
 void ATIRage::begin_drawing(uint32_t initiator, uint32_t value) {
     switch(initiator) {
+    case ATI_DST_WIDTH:
+        this->regs[ATI_DST_WIDTH] = value;
+        this->draw_rect(extract_bits<uint32_t>(value, 0, 14), extract_bits<uint32_t>(this->regs[ATI_DST_HEIGHT], 0, 15));
+        break;
     case ATI_DST_WIDTH_HEIGHT:
         this->regs[ATI_DST_WIDTH_HEIGHT] = value;
         this->draw_rect(extract_bits<uint32_t>(value, 0, 14), extract_bits<uint32_t>(value, 16, 15));
@@ -1270,73 +1376,176 @@ uint8_t ATIRage::get_bits_per_pel(uint8_t pix_width)
 
 void ATIRage::draw_rect(uint32_t width, uint32_t height) {
     uint8_t frgd_src           = extract_bits<uint32_t>(this->regs[ATI_DP_SRC], ATI_DP_FRGD_SRC, ATI_DP_FRGD_SRC_size);
-//  uint8_t bkgd_src           = extract_bits<uint32_t>(this->regs[ATI_DP_SRC], ATI_DP_BKGD_SRC, ATI_DP_BKGD_SRC_size);
+    uint8_t bkgd_src           = extract_bits<uint32_t>(this->regs[ATI_DP_SRC], ATI_DP_BKGD_SRC, ATI_DP_BKGD_SRC_size);
     uint8_t mono_src           = extract_bits<uint32_t>(this->regs[ATI_DP_SRC], ATI_DP_MONO_SRC, ATI_DP_MONO_SRC_size);
     uint8_t src_block_fill_fcn = extract_bits<uint32_t>(this->regs[ATI_SRC_CNTL], ATI_SRC_BLOCK_FILL_FCN, ATI_SRC_BLOCK_FILL_FCN_size);
 
-    // Do nothing if SGRAM color registers are to be written into.
-    if (src_block_fill_fcn == 1)
-        return;
+    this->regs[ATI_DST_HEIGHT] = height;
+    this->regs[ATI_DST_WIDTH] = width;
 
-    if (frgd_src <= 1 && !mono_src) { // rectangle fill with foreground or background color
-        this->fill_rect(width, height);
+    // Do nothing if SGRAM color registers are to be written into.
+    if (src_block_fill_fcn == 1) {
+        int dst_x = extract_bits<uint32_t>(this->regs[ATI_DST_X], ATI_DST_X_pos, ATI_DST_X_size);
+        int dst_y = extract_bits<uint32_t>(this->regs[ATI_DST_Y], ATI_DST_Y_pos, ATI_DST_Y_size);
+        int xsign = (this->regs[ATI_DST_CNTL] & 1) ? 1 : -1;
+        int ysign = (this->regs[ATI_DST_CNTL] & 2) ? 1 : -1;
+        
+        if (bit_set(this->regs[ATI_DST_CNTL], 3)) {
+            dst_x += dst_width * xsign;
+        }
+        if (bit_set(this->regs[ATI_DST_CNTL], 4)) {
+            dst_y += dst_height * ysign;
+        }
+
+        insert_bits<uint32_t>(this->regs[ATI_DST_X], dst_x, ATI_DST_X_pos, ATI_DST_X_size);
+        insert_bits<uint32_t>(this->regs[ATI_DST_Y], dst_y, ATI_DST_Y_pos, ATI_DST_Y_size);
+        return;
+    }
+
+    this->src_width = this->regs[ATI_SRC_WIDTH1];
+    this->src_height = this->regs[ATI_SRC_HEIGHT1];
+    this->src_x = 0;
+    this->src_y = 0;
+    this->src_x_start = this->regs[ATI_SRC_X] & 0x1fff;
+    this->src_y_start = this->regs[ATI_SRC_Y] & 0x7fff;
+
+    if (this->src_x_start & 0x1000) {
+        this->src_x_start |= ~0xFFF;
+    } 
+    if (this->src_y_start & 0x4000) {
+        this->src_y_start |= ~0x3FFF;
+    }
+
+    if (bit_set(this->regs[ATI_SRC_CNTL], 2)) {
+        this->src_x_start = 0;
+        this->src_y_start = 0;
+    }
+
+    this->dst_width = this->regs[ATI_DST_WIDTH];
+    this->dst_height = this->regs[ATI_DST_HEIGHT];
+    this->dst_x = 0;
+    this->dst_y = 0;
+    this->dst_x_start = this->regs[ATI_DST_X];
+    this->dst_y_start = this->regs[ATI_DST_Y];
+
+    if (this->dst_x_start & 0x1000) {
+        this->dst_x_start |= ~0xFFF;
+    } 
+    if (this->dst_y_start & 0x4000) {
+        this->dst_y_start |= ~0x3FFF;
+    }
+
+    // if (extract_bits(this->regs[ATI_DP_SRC], ATI_DP_MONO_SRC, ATI_DP_MONO_SRC_size) == 2 && ((this->regs[ATI_SRC_CNTL] & 0xc) >> 2) == 3) {
+    //     dst_width = (dst_width + 8) & ~7;
+    // }
+
+    if (frgd_src != 2 && bkgd_src != 2 && mono_src != 2) {
+        this->blit_rect(width, height);
     } else {
         LOG_F(WARNING, "%s: unimplemented rectangle draw op, DP_FRGD_SRC=0x%X, DP_MONO_SRC=0x%X", this->name.c_str(),
               frgd_src, mono_src);
     }
 }
 
-uint32_t ATIRage::fetch_source(int32_t& src_x, int32_t& src_y, int dst_x, int dst_y, uint8_t source_type, uint8_t& mix)
+uint32_t ATIRage::fetch_source(int32_t s_x, int32_t s_y, uint8_t& mix)
 {
     /*
     Monochrome sources do not have a separate pitch and offset register.
     If those are used, non-monochrome sources can't use data from memory
     unless those are also 1-bit.
     */
-    uint8_t src_sel     = 1; // foreground.
-    uint8_t frgd_src    = extract_bits<uint32_t>(this->regs[ATI_DP_SRC], ATI_DP_FRGD_SRC, ATI_DP_FRGD_SRC_size);
-    uint8_t bkgd_src    = extract_bits<uint32_t>(this->regs[ATI_DP_SRC], ATI_DP_BKGD_SRC, ATI_DP_BKGD_SRC_size);
-    uint8_t frgd_mix    = extract_bits<uint32_t>(this->regs[ATI_DP_MIX], ATI_DP_FRGD_MIX, ATI_DP_FRGD_MIX_size);
-    uint8_t bkgd_mix    = extract_bits<uint32_t>(this->regs[ATI_DP_MIX], ATI_DP_BKGD_MIX, ATI_DP_BKGD_MIX_size);
-    uint8_t mono_src    = extract_bits<uint32_t>(this->regs[ATI_DP_SRC], ATI_DP_MONO_SRC, ATI_DP_MONO_SRC_size);
-    uint8_t src_pix_fmt = extract_bits<uint32_t>(this->regs[ATI_DP_PIX_WIDTH], ATI_DP_SRC_PIX_WIDTH,
+    uint32_t pix         = 0;
+    uint8_t  src_sel     = 1; // foreground.
+    uint8_t  frgd_src    = extract_bits<uint32_t>(this->regs[ATI_DP_SRC], ATI_DP_FRGD_SRC, ATI_DP_FRGD_SRC_size);
+    uint8_t  mono_src    = extract_bits<uint32_t>(this->regs[ATI_DP_SRC], ATI_DP_MONO_SRC, ATI_DP_MONO_SRC_size);
+    uint8_t  bkgd_src    = extract_bits<uint32_t>(this->regs[ATI_DP_SRC], ATI_DP_BKGD_SRC, ATI_DP_BKGD_SRC_size);
+    uint8_t  frgd_mix    = extract_bits<uint32_t>(this->regs[ATI_DP_MIX], ATI_DP_FRGD_MIX, ATI_DP_FRGD_MIX_size);
+    uint8_t  bkgd_mix    = extract_bits<uint32_t>(this->regs[ATI_DP_MIX], ATI_DP_BKGD_MIX, ATI_DP_BKGD_MIX_size);
+    uint8_t  src_pix_fmt = extract_bits<uint32_t>(this->regs[ATI_DP_PIX_WIDTH], ATI_DP_SRC_PIX_WIDTH,
                                                  ATI_DP_SRC_PIX_WIDTH_size);
     // grab trajectory params
     int src_offs   = extract_bits<uint32_t>(this->regs[ATI_SRC_OFF_PITCH], ATI_SRC_OFFSET, ATI_SRC_OFFSET_size);
     int src_pitch  = extract_bits<uint32_t>(this->regs[ATI_SRC_OFF_PITCH], ATI_SRC_PITCH, ATI_SRC_PITCH_size);
     src_offs      *= 8;
     src_pitch     *= get_bits_per_pel(src_pix_fmt);
-    int x_inc      = (this->regs[ATI_DST_CNTL] & 1) ? 1 : -1;
 
-    auto src_ptr = &this->vram_ptr[(src_offs + src_x * x_inc) % this->vram_size];
     mix = frgd_mix;
 
     if (mono_src != 0) {
         switch (mono_src) {
             case 1: {
                 uint64_t mono_val = regs[ATI_PAT_REG0] | ((uint64_t)regs[ATI_PAT_REG1]) << 32ull;
-                src_sel = mono_val & !!(1ull << (((dst_y & 7) * 8) + (7 - (dst_x & 7))));
+                src_sel = mono_val & !!(1ull << (((s_y & 7) * 8) + ((this->regs[ATI_DP_PIX_WIDTH] & (1 << ATI_DP_BYTE_PIX_ORDER)) ? (s_x & 7) : (7 - (s_x & 7)))));
                 break;
             }
             case 2: {
-                src_sel = this->host_data & 1;
+                src_sel = (this->regs[ATI_DP_PIX_WIDTH] & (1 << ATI_DP_BYTE_PIX_ORDER)) ? (this->host_data >> 31) : this->host_data & 1;
                 break;
             }
             case 3: {
-                auto mono_ptr = &((uint64_t*)&this->vram_ptr)[src_offs / 8];
-                src_sel = (*(mono_ptr + (dst_y / 8) * (src_pitch / 8))) & !!(1ull << (((dst_y & 7) * 8) + (7 - (dst_x & 7))));
+                auto mono_ptr = &((uint64_t*)&this->vram_ptr)[(src_offs / 8) + (((bit_set(this->regs[ATI_SRC_CNTL], 2) ? 0 : s_y * src_pitch) + s_x) / 8)];
+                src_sel = *mono_ptr & !!(1ull << (((s_y & 7) * 8) + ((this->regs[ATI_DP_PIX_WIDTH] & (1 << ATI_DP_BYTE_PIX_ORDER)) ? (s_x & 7) : (7 - (s_x & 7)))));
                 break;
             }
         }
     }
 
     mix = src_sel ? frgd_mix : bkgd_mix;
+    switch (src_sel ? frgd_src : bkgd_src) {
+        case 0: {
+            pix = this->regs[ATI_DP_BKGD_CLR];
+            break;
+        }
+        case 1: {
+            pix = this->regs[ATI_DP_FRGD_CLR];
+            break;
+        }
+        case 2: {
+            pix = this->host_data;
+            break;
+        }
+        case 4: {
+            if (this->regs[ATI_PAT_CNTL] & 2) {
+                pix = (((s_y & 1) ? this->regs[ATI_PAT_REG1] : this->regs[ATI_PAT_REG0]) >> (8 * (s_x & 3))) & 0xFF;
+            } else if (this->regs[ATI_PAT_CNTL] & 4) {
+                pix = (((s_x & 4) ? this->regs[ATI_PAT_REG1] : this->regs[ATI_PAT_REG0]) >> (8 * (s_x & 3))) & 0xFF;
+            }
+            break;
+        }
+        case 3: {
+            s_x *= get_bits_per_pel(src_pix_fmt) / 8;
+            auto src_ptr = &this->vram_ptr[(bit_set(this->regs[ATI_SRC_CNTL], 2) ? (src_offs + s_x) : (src_offs + s_x + s_y * src_pitch)) % this->vram_size];
+            switch (src_pix_fmt) {
+                case 2:
+                case 8:
+                case 7:
+                {
+                    pix = *src_ptr;
+                    break;
+                }
+                case 3:
+                {
+                    pix = *(uint16_t*)src_ptr;
+                    break;
+                }
+                case 6:
+                case 14:
+                {
+                    pix = *(uint32_t*)src_ptr;
+                    break;
+                }
+            }
+        }
+    }
+    return pix;
 }
 
 void ATIRage::process_pixel(uint32_t pix, int& dst_x, int& dst_y, uint8_t mix)
 {
     uint8_t dst_pix_fmt = extract_bits<uint32_t>(this->regs[ATI_DP_PIX_WIDTH], ATI_DP_DST_PIX_WIDTH,
                                                  ATI_DP_DST_PIX_WIDTH_size);
+    uint32_t dst_pix    = 0;
+    bool     clr_cmp    = false;
 
     // grab trajectory params
     int dst_offs   = extract_bits<uint32_t>(this->regs[ATI_DST_OFF_PITCH], ATI_DST_OFFSET, ATI_DST_OFFSET_size);
@@ -1350,8 +1559,7 @@ void ATIRage::process_pixel(uint32_t pix, int& dst_x, int& dst_y, uint8_t mix)
     dst_offs  *= 8;
     dst_pitch *= get_bits_per_pel(dst_pix_fmt);
 
-    int x_inc = (this->regs[ATI_DST_CNTL] & 1) ? 1 : -1;
-    int y_inc = (this->regs[ATI_DST_CNTL] & 2) ? 1 : -1;
+    int x_inc = 1;
 
     if (!(dst_x >= sc_left && dst_x <= sc_right && dst_y >= sc_top && dst_y <= sc_bottom)) {
         return;
@@ -1368,54 +1576,120 @@ void ATIRage::process_pixel(uint32_t pix, int& dst_x, int& dst_y, uint8_t mix)
         case 8:
         case 7:
         {
-            *dst_ptr = (*dst_ptr & ~write_msk) | (perform_mix_op(pix, *dst_ptr, mix) & write_msk);
+            dst_pix = *dst_ptr;
             break;
         }
         case 3:
         {
-            uint16_t dst_pix = *(uint16_t*)dst_ptr;
-            dst_pix = (dst_pix & ~write_msk) | (perform_mix_op(pix, dst_pix, mix) & write_msk);
+            dst_pix = *(uint16_t*)dst_ptr;
+            break;
+        }
+        case 6:
+        case 14:
+        {
+            dst_pix = *(uint32_t*)dst_ptr;
+            break;
+        }
+    }
+    
+    // We don't test for 3D texels here.
+    uint32_t cmp_pix  = this->regs[ATI_CLR_CMP_CLR] & this->regs[ATI_CLR_CMP_MSK];
+    uint32_t cmpd_pix = (bit_set(this->regs[ATI_CLR_CMP_CNTL], ATI_CLR_CMP_SRC) ? pix : dst_pix) & this->regs[ATI_CLR_CMP_MSK];
+
+    switch (extract_bits(this->regs[ATI_CLR_CMP_CNTL], ATI_CLR_CMP_FCN, ATI_CLR_CMP_FCN_size)) {
+        case 1:
+            clr_cmp = true;
+            break;
+        case 4:
+            clr_cmp = !!(cmp_pix == cmpd_pix);
+            break;
+        case 5:
+            clr_cmp = !!(cmp_pix != cmpd_pix);
+            break;
+    }
+
+    if (clr_cmp)
+        return;
+
+    dst_pix = (dst_pix & ~write_msk) | (perform_mix_op(pix, dst_pix, mix) & write_msk);
+    switch (dst_pix_fmt) {
+        case 2:
+        case 8:
+        case 7:
+        {
+            *dst_ptr = dst_pix;
+            break;
+        }
+        case 3:
+        {
             *(uint16_t*)dst_ptr = dst_pix;
             break;
         }
         case 6:
         case 14:
         {
-            uint32_t dst_pix = *(uint32_t*)dst_ptr;
-            dst_pix = (dst_pix & ~write_msk) | (perform_mix_op(pix, dst_pix, mix) & write_msk);
             *(uint32_t*)dst_ptr = dst_pix;
             break;
         }
     }
 }
 
-void ATIRage::fill_rect(uint32_t dst_width, uint32_t dst_height) {
-    uint8_t frgd_src = extract_bits<uint32_t>(this->regs[ATI_DP_SRC], ATI_DP_FRGD_SRC, ATI_DP_FRGD_SRC_size);
-    uint8_t frgd_mix = extract_bits<uint32_t>(this->regs[ATI_DP_MIX], ATI_DP_FRGD_MIX, ATI_DP_FRGD_MIX_size);
-    uint8_t bkgd_mix = extract_bits<uint32_t>(this->regs[ATI_DP_MIX], ATI_DP_BKGD_MIX, ATI_DP_BKGD_MIX_size);
-
-    // check for non-trivial operations
-    if (this->regs[ATI_CLR_CMP_CNTL]) {
-        LOG_F(WARNING, "%s: color comparator not implemented yet, CLR_CMP_CNTL=0x%X", this->name.c_str(),
-              this->regs[ATI_CLR_CMP_CNTL]);
-        return;
+void ATIRage::advance_source_x()
+{
+    bool pattern_rotation = (this->regs[ATI_SRC_CNTL] & 2) && (this->regs[ATI_SRC_CNTL] & 1); // both SRC_PATT_EN and SRC_PATT_ROTT_EN set
+    src_x++;
+    if (src_x >= src_width && !(this->regs[ATI_SRC_CNTL] & (1 << 2))) {
+        src_x = 0;
+        if (pattern_rotation) {
+            src_x_start = this->regs[ATI_SRC_X_START];
+            if (src_x_start & (1 << 12)) {
+                src_x_start |= ~0xFFF;
+            }
+            src_width = this->regs[ATI_SRC_WIDTH2];
+        }
     }
+}
 
-    // check pixel formats
-    uint8_t src_pix_fmt = extract_bits<uint32_t>(this->regs[ATI_DP_PIX_WIDTH], ATI_DP_SRC_PIX_WIDTH,
-                                                 ATI_DP_SRC_PIX_WIDTH_size);
-    uint8_t dst_pix_fmt = extract_bits<uint32_t>(this->regs[ATI_DP_PIX_WIDTH], ATI_DP_DST_PIX_WIDTH,
-                                                 ATI_DP_DST_PIX_WIDTH_size);
-
-    if (dst_pix_fmt != src_pix_fmt || (dst_pix_fmt != 3 && dst_pix_fmt != 6 && dst_pix_fmt != 2)) {
-        LOG_F(WARNING, "%s: unsupported pixel format conversion, DP_SRC_PIX_WIDTH=0x%X, DP_DST_PIX_WIDTH=0x%X",
-              this->name.c_str(), src_pix_fmt, dst_pix_fmt);
+void ATIRage::advance_source_y()
+{
+    bool pattern_rotation = (this->regs[ATI_SRC_CNTL] & 2) && (this->regs[ATI_SRC_CNTL] & 1); // both SRC_PATT_EN and SRC_PATT_ROTT_EN set
+    if (bit_set(this->regs[ATI_SRC_CNTL], 2))
         return;
+    src_x = 0;
+    if (pattern_rotation) {
+        src_x_start = this->regs[ATI_SRC_X_START];
+        if (src_x_start & (1 << 12)) {
+            src_x_start |= ~0xFFF;
+        }
+        src_width = this->regs[ATI_SRC_WIDTH2];
     }
+    src_y++;
+    if (src_y >= src_height && (this->regs[ATI_SRC_CNTL] & 1)) {
+        src_y = 0;
+        if (pattern_rotation) {
+            src_y_start = this->regs[ATI_SRC_Y_START];
+            if (src_y_start & (1 << 14)) {
+                src_y_start |= ~0x3FFF;
+            }
+            src_height = this->regs[ATI_SRC_HEIGHT2];
+        }
+    }
+}
 
+void ATIRage::blit_rect(uint32_t dst_width, uint32_t dst_height)
+{
     // grab trajectory params
-    int dst_x      = extract_bits<uint32_t>(this->regs[ATI_DST_X], ATI_DST_X_pos, ATI_DST_X_size);
-    int dst_y      = extract_bits<uint32_t>(this->regs[ATI_DST_Y], ATI_DST_Y_pos, ATI_DST_Y_size);
+    int dst_x = extract_bits<uint32_t>(this->regs[ATI_DST_X], ATI_DST_X_pos, ATI_DST_X_size);
+    int dst_y = extract_bits<uint32_t>(this->regs[ATI_DST_Y], ATI_DST_Y_pos, ATI_DST_Y_size);
+    int xsign = (this->regs[ATI_DST_CNTL] & 1) ? 1 : -1;
+    int ysign = (this->regs[ATI_DST_CNTL] & 2) ? 1 : -1;
+    // grab trajectory params
+    int src_offs   = extract_bits<uint32_t>(this->regs[ATI_SRC_OFF_PITCH], ATI_SRC_OFFSET, ATI_SRC_OFFSET_size);
+    int src_pitch  = extract_bits<uint32_t>(this->regs[ATI_SRC_OFF_PITCH], ATI_SRC_PITCH, ATI_SRC_PITCH_size);
+    src_offs      *= 8;
+    uint8_t  src_pix_fmt = extract_bits<uint32_t>(this->regs[ATI_DP_PIX_WIDTH], ATI_DP_SRC_PIX_WIDTH,
+                                                 ATI_DP_SRC_PIX_WIDTH_size);
+    src_pitch     *= get_bits_per_pel(src_pix_fmt);
 
     if (dst_x & 0x1000) {
         dst_x |= ~0xFFF;
@@ -1424,19 +1698,44 @@ void ATIRage::fill_rect(uint32_t dst_width, uint32_t dst_height) {
         dst_y |= ~0x3FFF;
     }
 
-    int x_inc = (this->regs[ATI_DST_CNTL] & 1) ? 1 : -1;
-    int y_inc = (this->regs[ATI_DST_CNTL] & 2) ? 1 : -1;
-    uint32_t pix = frgd_src == 0 ? this->regs[ATI_DP_BKGD_CLR] : this->regs[ATI_DP_FRGD_CLR];
-
-    x_inc *= get_bits_per_pel(dst_pix_fmt) / 8;
+    if ((this->regs[ATI_SRC_CNTL] & 2) && (this->regs[ATI_SRC_CNTL] & 1)) {
+        LOG_F(WARNING, "%s: src_x = %d, src_y = %d,, dst_x = %d, dst_y = %d, offset = 0x%X, pitch = %d (%d pixels), dst_width = %d, dst_height = %d, src_width1 = %d, src_height1 = %d, src_width2 = %d, src_height2 = %d", this->name.c_str(), src_x_start, src_y_start, dst_x, dst_y, src_offs, src_pitch, src_pitch / get_bits_per_pel(src_pix_fmt), dst_width, dst_height, src_width, src_height, this->regs[ATI_SRC_WIDTH2], this->regs[ATI_SRC_HEIGHT2]);
+        //src_x_start = 0;
+        //src_x = src_x_start;
+        //src_x_start = this->regs[ATI_SRC_X_START];
+        //if (src_x_start & (1 << 12)) {
+        //    src_x_start |= ~0xFFF;
+        //}
+        //src_width = this->regs[ATI_SRC_WIDTH2];
+        //src_x = src_width - src_x;
+    }
+    else
+        LOG_F(WARNING, "%s: dst_x = %d, dst_y = %d, offset = 0x%X, pitch = %d (%d pixels), dst_width = %d, dst_height = %d, src_width1 = %d, src_height1 = %d", this->name.c_str(), dst_x, dst_y, src_offs, src_pitch, src_pitch / get_bits_per_pel(src_pix_fmt), dst_width, dst_height, src_width, (this->regs[ATI_SRC_CNTL] & 1) ? src_height : dst_height);
 
     for (int y = 0; y < dst_height; y++) {
         for (int x = 0; x < dst_width; x++) {
-            int xx = (x * ((this->regs[ATI_DST_CNTL] & 1) ? 1 : -1)) + dst_x;
-            int yy = (y * ((this->regs[ATI_DST_CNTL] & 2) ? 1 : -1)) + dst_y;
-            process_pixel(pix, xx, yy, frgd_mix);
+            int xx = (x * xsign) + dst_x;
+            int yy = (y * ysign) + dst_y;
+            uint32_t pix = 0;
+            uint8_t mix = 3;
+
+            pix = fetch_source(this->src_x_start + (src_x * xsign), this->src_y_start + (src_y * ysign), mix);
+
+            process_pixel(pix, xx, yy, mix);
+            advance_source_x();
         }
+        advance_source_y();
     }
+
+    if (bit_set(this->regs[ATI_DST_CNTL], 3)) {
+        dst_x += dst_width * xsign;
+    }
+    if (bit_set(this->regs[ATI_DST_CNTL], 4)) {
+        dst_y += dst_height * ysign;
+    }
+
+    insert_bits<uint32_t>(this->regs[ATI_DST_X], dst_x, ATI_DST_X_pos, ATI_DST_X_size);
+    insert_bits<uint32_t>(this->regs[ATI_DST_Y], dst_y, ATI_DST_Y_pos, ATI_DST_Y_size);
 }
 
 // ================================== Device config ====================================
