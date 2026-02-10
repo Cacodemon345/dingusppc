@@ -1689,10 +1689,11 @@ void ATIRage::process_host_data()
                 }
             }
 
-            auto pix = fetch_source(this->src_x_start + (src_x * xsign), this->src_y_start + (src_y * ysign), mix);
+            if (draw) {
+                auto pix = fetch_source(this->src_x_start + (src_x * xsign), this->src_y_start + (src_y * ysign), mix);
 
-            process_pixel(pix, dst_x_start + (dst_x * xsign), dst_y_start + (dst_y * ysign), mix);
-
+                process_pixel(pix, dst_x_start + (dst_x * xsign), dst_y_start + (dst_y * ysign), mix);
+            }
             this->host_data_pos -= this->host_data_req;
             this->host_data >>= this->host_data_req;
             
