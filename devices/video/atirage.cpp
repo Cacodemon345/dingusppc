@@ -1411,7 +1411,7 @@ void ATIRage::advance_line()
 {
     int xsign = (this->regs[ATI_DST_CNTL] & 1) ? 1 : -1;
     int ysign = (this->regs[ATI_DST_CNTL] & 2) ? 1 : -1;
-    bool y_major = this->regs[ATI_DST_CNTL] & (1 << 2);
+    bool x_major = !(this->regs[ATI_DST_CNTL] & (1 << 2));
 
     this->line_pos++;
 
@@ -1420,7 +1420,7 @@ void ATIRage::advance_line()
         return;
     }
 
-    if (y_major) {
+    if (!x_major) {
         this->dst_x += xsign;
         this->src_x += xsign;
 
