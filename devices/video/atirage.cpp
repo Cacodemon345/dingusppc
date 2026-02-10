@@ -420,6 +420,33 @@ void ATIRage::write_reg(uint32_t reg_offset, uint32_t value, uint32_t size) {
         old_value |= this->regs[ATI_SRC_X_START] << 16;
     }
 
+    if (reg_offset >= 0x200 && reg_offset <= 0x23F && (reg_offset + size >= 0x200) && (reg_offset + size <= 0x23F)) {
+        if (this->host_data_active) {
+            if (this->regs[ATI_HOST_CNTL] & 2) {
+                switch (this->host_data_req) {
+                    case 16:
+                    {
+                        if (size == 4) {
+                            value = ((value & 0xFFFF) << 16) | (value >> 16);
+                        }
+                        // fallthrough
+                    }
+                    case 32:
+                    {
+                        value = BYTESWAP_SIZED(value, size);
+                        break;
+                    }
+                }
+            }
+            this->host_data |= value << this->host_data_pos;
+            this->host_data_pos += size * 8;
+            if (this->host_data_pos >= this->host_data_req) {
+                this->process_host_data();
+            }
+        }
+        return;
+    }
+
     if (offset || size != 4) { // slow path
         if ((offset + size) > 4) {
             ABORT_F("%s: unaligned DWORD writes not implemented", this->get_name_and_unit_address().c_str());
@@ -1282,6 +1309,12 @@ void ATIRage::update_display_connection()
 // =================================== Draw Engine =====================================
 void ATIRage::begin_drawing(uint32_t initiator, uint32_t value) {
     switch(initiator) {
+    case ATI_DST_BRES_LNTH:
+        this->regs[ATI_DST_BRES_LNTH] = value;
+        if (!(value & (1 << 31))) {
+            this->draw_line(value & 0x7FFF);
+        }
+        break;
     case ATI_DST_WIDTH:
         this->regs[ATI_DST_WIDTH] = value;
         this->draw_rect(extract_bits<uint32_t>(value, 0, 14), extract_bits<uint32_t>(this->regs[ATI_DST_HEIGHT], 0, 15));
@@ -1374,7 +1407,121 @@ uint8_t ATIRage::get_bits_per_pel(uint8_t pix_width)
     return 1;
 }
 
-void ATIRage::draw_rect(uint32_t width, uint32_t height) {
+void ATIRage::advance_line()
+{
+    int xsign = (this->regs[ATI_DST_CNTL] & 1) ? 1 : -1;
+    int ysign = (this->regs[ATI_DST_CNTL] & 2) ? 1 : -1;
+    bool y_major = this->regs[ATI_DST_CNTL] & (1 << 2);
+
+    this->line_pos++;
+
+    if (this->line_pos >= this->line_length) {
+        this->line_draw = false;
+        return;
+    }
+
+    if (y_major) {
+        this->dst_x += xsign;
+        this->src_x += xsign;
+
+        if (this->bres_error >= 0) {
+            this->dst_y += ysign;
+            this->src_y += ysign;
+            this->bres_error += this->bres_dec;
+        } else {
+            this->bres_error += this->bres_inc;
+        }
+    } else {
+        this->dst_y += ysign;
+        this->src_y += ysign;
+
+        if (this->bres_error >= 0) {
+            this->dst_x += xsign;
+            this->src_x += xsign;
+            this->bres_error += this->bres_dec;
+        } else {
+            this->bres_error += this->bres_inc;
+        }
+    }
+}
+
+void ATIRage::draw_line(uint32_t length)
+{
+    uint8_t frgd_src  = extract_bits<uint32_t>(this->regs[ATI_DP_SRC], ATI_DP_FRGD_SRC, ATI_DP_FRGD_SRC_size);
+    uint8_t bkgd_src  = extract_bits<uint32_t>(this->regs[ATI_DP_SRC], ATI_DP_BKGD_SRC, ATI_DP_BKGD_SRC_size);
+    uint8_t mono_src  = extract_bits<uint32_t>(this->regs[ATI_DP_SRC], ATI_DP_MONO_SRC, ATI_DP_MONO_SRC_size);
+    this->line_length = length;
+    this->line_pos    = 0;
+    this->line_draw   = true;
+
+    this->host_data_active = false;
+    this->host_data_pos = 0;
+    this->dst_width = this->regs[ATI_DST_WIDTH];
+    this->dst_height = this->regs[ATI_DST_HEIGHT];
+    this->dst_x = this->regs[ATI_DST_X];
+    this->dst_y = this->regs[ATI_DST_Y];
+    this->dst_x_start = 0;
+    this->dst_y_start = 0;
+
+    if (this->dst_x & 0x1000) {
+        this->dst_x |= ~0xFFF;
+    } 
+    if (this->dst_y & 0x4000) {
+        this->dst_y |= ~0x3FFF;
+    }
+
+    this->src_x = this->regs[ATI_SRC_X] & 0x1fff;
+    this->src_y = this->regs[ATI_SRC_Y] & 0x7fff;
+    if (this->src_x & 0x1000) {
+        this->src_x |= ~0xFFF;
+    } 
+    if (this->src_y & 0x4000) {
+        this->src_y |= ~0x3FFF;
+    }
+    this->src_x_start = 0;
+    this->src_y_start = 0;
+
+    this->bres_inc   = this->regs[ATI_DST_BRES_INC];
+    this->bres_dec   = this->regs[ATI_DST_BRES_DEC];
+    this->bres_error = this->regs[ATI_DST_BRES_ERR];
+
+    if (this->bres_error & 0x40000) {
+        this->bres_error |= ~0x3ffff;
+    }
+
+    if (this->bres_dec & 0x40000) {
+        this->bres_dec |= ~0x3ffff;
+    }
+    
+    if (frgd_src != 2 && bkgd_src != 2 && mono_src != 2) {
+        while (this->line_draw) {
+            uint32_t pix = 0;
+            uint8_t mix = 3;
+            bool draw = !(this->regs[ATI_DST_CNTL] & (1 << 6)) || ((this->regs[ATI_DST_CNTL] & (1 << 2)) || (this->bres_error >= 0));
+
+            if ((line_length - line_pos) <= 1) {
+                draw = draw && (this->regs[ATI_DST_CNTL] & (1 << 5));
+            }
+
+            if (draw) {
+                pix = fetch_source(src_x, src_y, mix);
+
+                process_pixel(pix, dst_x, dst_y, mix);
+            }
+            advance_line();
+        }
+    } else {
+        uint8_t host_pix_fmt = extract_bits<uint32_t>(this->regs[ATI_DP_PIX_WIDTH], ATI_DP_HOST_PIX_WIDTH, ATI_DP_HOST_PIX_WIDTH_size);
+        this->host_data_active = 1;
+        this->host_data_pos = 0;
+        this->host_data_req = (mono_src == 2) ? 1 : get_bits_per_pel(host_pix_fmt);
+        LOG_F(WARNING, "%s: unimplemented rectangle draw op, DP_FRGD_SRC=0x%X, DP_MONO_SRC=0x%X", this->name.c_str(),
+              frgd_src, mono_src);
+    }
+}
+
+void ATIRage::draw_rect(uint32_t width, uint32_t height)
+{
     uint8_t frgd_src           = extract_bits<uint32_t>(this->regs[ATI_DP_SRC], ATI_DP_FRGD_SRC, ATI_DP_FRGD_SRC_size);
     uint8_t bkgd_src           = extract_bits<uint32_t>(this->regs[ATI_DP_SRC], ATI_DP_BKGD_SRC, ATI_DP_BKGD_SRC_size);
     uint8_t mono_src           = extract_bits<uint32_t>(this->regs[ATI_DP_SRC], ATI_DP_MONO_SRC, ATI_DP_MONO_SRC_size);
@@ -1382,9 +1529,12 @@ void ATIRage::draw_rect(uint32_t width, uint32_t height) {
 
     this->regs[ATI_DST_HEIGHT] = height;
     this->regs[ATI_DST_WIDTH] = width;
+    this->host_data_active = false;
+    this->host_data_pos = 0;
 
     // Do nothing if SGRAM color registers are to be written into.
     if (src_block_fill_fcn == 1) {
+        // ...but honor DST_X_TILE and DST_Y_TILE anyways.
         int dst_x = extract_bits<uint32_t>(this->regs[ATI_DST_X], ATI_DST_X_pos, ATI_DST_X_size);
         int dst_y = extract_bits<uint32_t>(this->regs[ATI_DST_Y], ATI_DST_Y_pos, ATI_DST_Y_size);
         int xsign = (this->regs[ATI_DST_CNTL] & 1) ? 1 : -1;
@@ -1408,6 +1558,10 @@ void ATIRage::draw_rect(uint32_t width, uint32_t height) {
     this->src_y = 0;
     this->src_x_start = this->regs[ATI_SRC_X] & 0x1fff;
     this->src_y_start = this->regs[ATI_SRC_Y] & 0x7fff;
+    this->line_draw   = false;
+    
+    this->poly_draw_chk = (this->regs[ATI_DST_CNTL] & (1 << 6));
+    this->poly_draw_flip = false;
 
     if (this->src_x_start & 0x1000) {
         this->src_x_start |= ~0xFFF;
@@ -1435,19 +1589,137 @@ void ATIRage::draw_rect(uint32_t width, uint32_t height) {
         this->dst_y_start |= ~0x3FFF;
     }
 
-    // if (extract_bits(this->regs[ATI_DP_SRC], ATI_DP_MONO_SRC, ATI_DP_MONO_SRC_size) == 2 && ((this->regs[ATI_SRC_CNTL] & 0xc) >> 2) == 3) {
-    //     dst_width = (dst_width + 8) & ~7;
-    // }
+    if (mono_src == 2 && ((this->regs[ATI_SRC_CNTL] & 0xc) >> 2) == 3) {
+        this->dst_width = (this->dst_width + 8) & ~7;
+    }
 
     if (frgd_src != 2 && bkgd_src != 2 && mono_src != 2) {
         this->blit_rect(width, height);
     } else {
-        LOG_F(WARNING, "%s: unimplemented rectangle draw op, DP_FRGD_SRC=0x%X, DP_MONO_SRC=0x%X", this->name.c_str(),
-              frgd_src, mono_src);
+        uint8_t host_pix_fmt = extract_bits<uint32_t>(this->regs[ATI_DP_PIX_WIDTH], ATI_DP_HOST_PIX_WIDTH, ATI_DP_HOST_PIX_WIDTH_size);
+        this->host_data_active = 1;
+        this->host_data_pos = 0;
+        this->host_data_req = (mono_src == 2) ? 1 : get_bits_per_pel(host_pix_fmt);
+        this->host_data = 0;
     }
 }
 
-uint32_t ATIRage::fetch_source(int32_t s_x, int32_t s_y, uint8_t& mix)
+void ATIRage::process_host_data()
+{
+    int xsign = (this->regs[ATI_DST_CNTL] & 1) ? 1 : -1;
+    int ysign = (this->regs[ATI_DST_CNTL] & 2) ? 1 : -1;
+    uint8_t  host_pix_fmt = extract_bits<uint32_t>(this->regs[ATI_DP_PIX_WIDTH], ATI_DP_HOST_PIX_WIDTH,
+                                                 ATI_DP_HOST_PIX_WIDTH_size);
+    uint32_t bits = get_bits_per_pel(host_pix_fmt);
+    if (this->host_data_req == 1) {
+        while (this->host_data_pos) {
+            uint8_t mix = 3;
+            auto pix = fetch_source(this->src_x_start + (src_x * xsign), this->src_y_start + (src_y * ysign), mix);
+            bool draw = !(this->regs[ATI_DST_CNTL] & (1 << 6)) || ((this->regs[ATI_DST_CNTL] & (1 << 2)) || (this->bres_error >= 0));
+
+            if (this->line_draw && (line_length - line_pos) <= 1) {
+                draw = draw && (this->regs[ATI_DST_CNTL] & (1 << 5));
+            }
+
+            if (!this->line_draw) {
+                draw = !this->poly_draw_chk;
+                if (this->poly_draw_chk) {
+                    uint8_t dummy_pix = 0;
+                    uint32_t poly_pix = fetch_source(this->src_x_start + (src_x * xsign), this->src_y_start + (src_y * ysign), dummy_pix, true);
+                    if (poly_pix) {
+                        this->poly_draw_flip ^= 1;
+                    }
+                    draw = this->poly_draw_flip;
+                }
+            }
+
+            if (draw) {
+                auto pix = fetch_source(this->src_x_start + (src_x * xsign), this->src_y_start + (src_y * ysign), mix);
+
+                process_pixel(pix, dst_x_start + (dst_x * xsign), dst_y_start + (dst_y * ysign), mix);
+            }
+            
+            this->host_data = !(this->regs[ATI_DP_PIX_WIDTH] & (1 << ATI_DP_BYTE_PIX_ORDER)) ? (this->host_data << 1) : (this->host_data >> 1);
+            if (this->regs[ATI_HOST_CNTL] & 1) {
+                this->host_data = !(this->regs[ATI_DP_PIX_WIDTH] & (1 << ATI_DP_BYTE_PIX_ORDER)) ? (this->host_data << 7) : (this->host_data >> 7);
+            }
+            host_data_pos--;
+            if (this->regs[ATI_HOST_CNTL] & 1) {
+                host_data_pos -= 7;
+            }
+
+            if (this->line_draw) {
+                advance_line();
+                if (!this->line_draw) {
+                    this->host_data_active = false;
+                    return;
+                }
+            } else {
+                advance_source_x();
+                dst_x++;
+                if (dst_x >= dst_width) {
+                    dst_x = 0;
+                    dst_y++;
+                    advance_source_y();
+                    if (dst_y >= dst_height) {
+                        this->host_data_active = false;
+                        return;
+                    }
+                }
+            }
+        }
+    } else {
+        while (this->host_data_pos) {
+            uint8_t mix = 3;
+            bool draw = !(this->regs[ATI_DST_CNTL] & (1 << 6)) || ((this->regs[ATI_DST_CNTL] & (1 << 2)) || (this->bres_error >= 0));
+
+            if (this->line_draw && (line_length - line_pos) <= 1) {
+                draw = draw && (this->regs[ATI_DST_CNTL] & (1 << 5));
+            }
+
+            if (!this->line_draw) {
+                draw = !this->poly_draw_chk;
+                if (this->poly_draw_chk) {
+                    uint8_t dummy_pix = 0;
+                    uint32_t poly_pix = fetch_source(this->src_x_start + (src_x * xsign), this->src_y_start + (src_y * ysign), dummy_pix, true);
+                    if (poly_pix) {
+                        this->poly_draw_flip ^= 1;
+                    }
+                    draw = this->poly_draw_flip;
+                }
+            }
+
+            auto pix = fetch_source(this->src_x_start + (src_x * xsign), this->src_y_start + (src_y * ysign), mix);
+
+            process_pixel(pix, dst_x_start + (dst_x * xsign), dst_y_start + (dst_y * ysign), mix);
+
+            this->host_data_pos -= this->host_data_req;
+            this->host_data >>= this->host_data_req;
+            
+            if (this->line_draw) {
+                advance_line();
+                if (!this->line_draw) {
+                    this->host_data_active = false;
+                    return;
+                }
+            } else {
+                advance_source_x();
+                dst_x++;
+                if (dst_x >= dst_width) {
+                    dst_x = 0;
+                    dst_y++;
+                    advance_source_y();
+                    if (dst_y >= dst_height) {
+                        this->host_data_active = false;
+                        return;
+                    }
+                }
+            }
+        }
+    }
+}
+
+uint32_t ATIRage::fetch_source(int32_t s_x, int32_t s_y, uint8_t& mix, bool force_blitsrc)
 {
     /*
     Monochrome sources do not have a separate pitch and offset register.
@@ -1469,29 +1741,34 @@ uint32_t ATIRage::fetch_source(int32_t s_x, int32_t s_y, uint8_t& mix)
     src_offs      *= 8;
     src_pitch     *= get_bits_per_pel(src_pix_fmt);
 
+    auto src_ptr = &this->vram_ptr[src_offs];
     mix = frgd_mix;
+
+    if (force_blitsrc)
+        mono_src = 0;
 
     if (mono_src != 0) {
         switch (mono_src) {
             case 1: {
                 uint64_t mono_val = regs[ATI_PAT_REG0] | ((uint64_t)regs[ATI_PAT_REG1]) << 32ull;
-                src_sel = mono_val & !!(1ull << (((s_y & 7) * 8) + ((this->regs[ATI_DP_PIX_WIDTH] & (1 << ATI_DP_BYTE_PIX_ORDER)) ? (s_x & 7) : (7 - (s_x & 7)))));
+                src_sel = mono_val & !!(1ull << (((s_y & 7) * 8) + ((this->regs[ATI_DP_PIX_WIDTH] & (1 << ATI_DP_BYTE_PIX_ORDER)) ? (7 - (s_x & 7)) : (s_x & 7))));
                 break;
             }
             case 2: {
-                src_sel = (this->regs[ATI_DP_PIX_WIDTH] & (1 << ATI_DP_BYTE_PIX_ORDER)) ? (this->host_data >> 31) : this->host_data & 1;
+                src_sel = !(this->regs[ATI_DP_PIX_WIDTH] & (1 << ATI_DP_BYTE_PIX_ORDER)) ? (this->host_data >> 31) : (this->host_data & 1);
                 break;
             }
             case 3: {
-                auto mono_ptr = &((uint64_t*)&this->vram_ptr)[(src_offs / 8) + (((bit_set(this->regs[ATI_SRC_CNTL], 2) ? 0 : s_y * src_pitch) + s_x) / 8)];
-                src_sel = *mono_ptr & !!(1ull << (((s_y & 7) * 8) + ((this->regs[ATI_DP_PIX_WIDTH] & (1 << ATI_DP_BYTE_PIX_ORDER)) ? (s_x & 7) : (7 - (s_x & 7)))));
+                uint64_t bit_offset = ((bit_set(this->regs[ATI_SRC_CNTL], 2) ? 0 : (uint64_t)s_y * (uint64_t)src_pitch)) + (((this->regs[ATI_DP_PIX_WIDTH] & (1 << ATI_DP_BYTE_PIX_ORDER)) ? s_x ^ 7 : s_x));
+                auto mono_ptr = &src_ptr[bit_offset / 8];
+                src_sel = *mono_ptr & (bit_offset & (1 << (bit_offset & 7)));
                 break;
             }
         }
     }
 
     mix = src_sel ? frgd_mix : bkgd_mix;
-    switch (src_sel ? frgd_src : bkgd_src) {
+    switch (force_blitsrc ? 3 : (src_sel ? frgd_src : bkgd_src)) {
         case 0: {
             pix = this->regs[ATI_DP_BKGD_CLR];
             break;
@@ -1514,24 +1791,24 @@ uint32_t ATIRage::fetch_source(int32_t s_x, int32_t s_y, uint8_t& mix)
         }
         case 3: {
             s_x *= get_bits_per_pel(src_pix_fmt) / 8;
-            auto src_ptr = &this->vram_ptr[(bit_set(this->regs[ATI_SRC_CNTL], 2) ? (src_offs + s_x) : (src_offs + s_x + s_y * src_pitch)) % this->vram_size];
+            auto src = &src_ptr[((bit_set(this->regs[ATI_SRC_CNTL], 2) ? 0 : s_y * src_pitch) + s_x)];
             switch (src_pix_fmt) {
                 case 2:
                 case 8:
                 case 7:
                 {
-                    pix = *src_ptr;
+                    pix = *src;
                     break;
                 }
                 case 3:
                 {
-                    pix = *(uint16_t*)src_ptr;
+                    pix = *(uint16_t*)src;
                     break;
                 }
                 case 6:
                 case 14:
                 {
-                    pix = *(uint32_t*)src_ptr;
+                    pix = *(uint32_t*)src;
                     break;
                 }
             }
@@ -1540,7 +1817,7 @@ uint32_t ATIRage::fetch_source(int32_t s_x, int32_t s_y, uint8_t& mix)
     return pix;
 }
 
-void ATIRage::process_pixel(uint32_t pix, int& dst_x, int& dst_y, uint8_t mix)
+void ATIRage::process_pixel(uint32_t pix, int dst_x, int dst_y, uint8_t mix)
 {
     uint8_t dst_pix_fmt = extract_bits<uint32_t>(this->regs[ATI_DP_PIX_WIDTH], ATI_DP_DST_PIX_WIDTH,
                                                  ATI_DP_DST_PIX_WIDTH_size);
@@ -1558,6 +1835,7 @@ void ATIRage::process_pixel(uint32_t pix, int& dst_x, int& dst_y, uint8_t mix)
 
     dst_offs  *= 8;
     dst_pitch *= get_bits_per_pel(dst_pix_fmt);
+    pix &= (1ull << get_bits_per_pel(dst_pix_fmt)) - 1;
 
     int x_inc = 1;
 
@@ -1638,7 +1916,8 @@ void ATIRage::advance_source_x()
 {
     bool pattern_rotation = (this->regs[ATI_SRC_CNTL] & 2) && (this->regs[ATI_SRC_CNTL] & 1); // both SRC_PATT_EN and SRC_PATT_ROTT_EN set
     src_x++;
-    if (src_x >= src_width && !(this->regs[ATI_SRC_CNTL] & (1 << 2))) {
+    src_width--;
+    if (src_width <= 0 && !(this->regs[ATI_SRC_CNTL] & (1 << 2))) {
         src_x = 0;
         if (pattern_rotation) {
             src_x_start = this->regs[ATI_SRC_X_START];
@@ -1655,14 +1934,14 @@ void ATIRage::advance_source_y()
     bool pattern_rotation = (this->regs[ATI_SRC_CNTL] & 2) && (this->regs[ATI_SRC_CNTL] & 1); // both SRC_PATT_EN and SRC_PATT_ROTT_EN set
     if (bit_set(this->regs[ATI_SRC_CNTL], 2))
         return;
+    src_x_start = this->regs[ATI_SRC_X];
     src_x = 0;
-    if (pattern_rotation) {
-        src_x_start = this->regs[ATI_SRC_X_START];
-        if (src_x_start & (1 << 12)) {
-            src_x_start |= ~0xFFF;
-        }
-        src_width = this->regs[ATI_SRC_WIDTH2];
-    }
+    src_width = this->regs[ATI_SRC_WIDTH1];
+
+    if (this->src_x_start & 0x1000) {
+        this->src_x_start |= ~0xFFF;
+    } 
+
     src_y++;
     if (src_y >= src_height && (this->regs[ATI_SRC_CNTL] & 1)) {
         src_y = 0;
@@ -1683,13 +1962,6 @@ void ATIRage::blit_rect(uint32_t dst_width, uint32_t dst_height)
     int dst_y = extract_bits<uint32_t>(this->regs[ATI_DST_Y], ATI_DST_Y_pos, ATI_DST_Y_size);
     int xsign = (this->regs[ATI_DST_CNTL] & 1) ? 1 : -1;
     int ysign = (this->regs[ATI_DST_CNTL] & 2) ? 1 : -1;
-    // grab trajectory params
-    int src_offs   = extract_bits<uint32_t>(this->regs[ATI_SRC_OFF_PITCH], ATI_SRC_OFFSET, ATI_SRC_OFFSET_size);
-    int src_pitch  = extract_bits<uint32_t>(this->regs[ATI_SRC_OFF_PITCH], ATI_SRC_PITCH, ATI_SRC_PITCH_size);
-    src_offs      *= 8;
-    uint8_t  src_pix_fmt = extract_bits<uint32_t>(this->regs[ATI_DP_PIX_WIDTH], ATI_DP_SRC_PIX_WIDTH,
-                                                 ATI_DP_SRC_PIX_WIDTH_size);
-    src_pitch     *= get_bits_per_pel(src_pix_fmt);
 
     if (dst_x & 0x1000) {
         dst_x |= ~0xFFF;
@@ -1698,30 +1970,28 @@ void ATIRage::blit_rect(uint32_t dst_width, uint32_t dst_height)
         dst_y |= ~0x3FFF;
     }
 
-    if ((this->regs[ATI_SRC_CNTL] & 2) && (this->regs[ATI_SRC_CNTL] & 1)) {
-        LOG_F(WARNING, "%s: src_x = %d, src_y = %d,, dst_x = %d, dst_y = %d, offset = 0x%X, pitch = %d (%d pixels), dst_width = %d, dst_height = %d, src_width1 = %d, src_height1 = %d, src_width2 = %d, src_height2 = %d", this->name.c_str(), src_x_start, src_y_start, dst_x, dst_y, src_offs, src_pitch, src_pitch / get_bits_per_pel(src_pix_fmt), dst_width, dst_height, src_width, src_height, this->regs[ATI_SRC_WIDTH2], this->regs[ATI_SRC_HEIGHT2]);
-        //src_x_start = 0;
-        //src_x = src_x_start;
-        //src_x_start = this->regs[ATI_SRC_X_START];
-        //if (src_x_start & (1 << 12)) {
-        //    src_x_start |= ~0xFFF;
-        //}
-        //src_width = this->regs[ATI_SRC_WIDTH2];
-        //src_x = src_width - src_x;
-    }
-    else
-        LOG_F(WARNING, "%s: dst_x = %d, dst_y = %d, offset = 0x%X, pitch = %d (%d pixels), dst_width = %d, dst_height = %d, src_width1 = %d, src_height1 = %d", this->name.c_str(), dst_x, dst_y, src_offs, src_pitch, src_pitch / get_bits_per_pel(src_pix_fmt), dst_width, dst_height, src_width, (this->regs[ATI_SRC_CNTL] & 1) ? src_height : dst_height);
-
     for (int y = 0; y < dst_height; y++) {
         for (int x = 0; x < dst_width; x++) {
             int xx = (x * xsign) + dst_x;
             int yy = (y * ysign) + dst_y;
+            bool draw = !(this->poly_draw_chk);
             uint32_t pix = 0;
             uint8_t mix = 3;
 
-            pix = fetch_source(this->src_x_start + (src_x * xsign), this->src_y_start + (src_y * ysign), mix);
+            if (this->poly_draw_chk) {
+                uint8_t dummy_pix = 0;
+                uint32_t poly_pix = fetch_source(this->src_x_start + (src_x * xsign), this->src_y_start + (src_y * ysign), dummy_pix, true);
+                if (poly_pix) {
+                    this->poly_draw_flip ^= 1;
+                }
+                draw = this->poly_draw_flip;
+            }
 
-            process_pixel(pix, xx, yy, mix);
+            if (draw) {
+                pix = fetch_source(this->src_x_start + (src_x * xsign), this->src_y_start + (src_y * ysign), mix);
+
+                process_pixel(pix, xx, yy, mix);
+            }
             advance_source_x();
         }
         advance_source_y();

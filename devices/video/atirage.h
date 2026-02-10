@@ -91,11 +91,14 @@ private:
     uint32_t perform_mix_op(uint32_t src, uint32_t dst, uint8_t mix);
     void begin_drawing(uint32_t initiator, uint32_t value);
     void draw_rect(uint32_t width, uint32_t height);
+    void draw_line(uint32_t length);
+    void advance_line();
     void advance_source_x();
     void advance_source_y();
     void blit_rect(uint32_t dst_width, uint32_t dst_height);
-    void process_pixel(uint32_t pix, int& dst_x, int& dst_y, uint8_t mix);
-    uint32_t fetch_source(int32_t src_x, int32_t src_y, uint8_t& mix);
+    void process_host_data();
+    void process_pixel(uint32_t pix, int dst_x, int dst_y, uint8_t mix);
+    uint32_t fetch_source(int32_t src_x, int32_t src_y, uint8_t& mix, bool force_blitsrc = false);
     uint8_t get_bits_per_pel(uint8_t pix_width);
 
     uint32_t    regs[512] = {}; // internal registers
@@ -147,6 +150,15 @@ private:
     uint8_t  host_data_req; // How many bits of host data is required.
     uint8_t  host_data_pos; // Position of host data.
     uint8_t  host_data_active;
+
+    int      line_length  = 0;
+    int      line_pos     = 0;
+    uint32_t bres_error   = 0;
+    uint32_t bres_inc     = 0;
+    uint32_t bres_dec     = 0;
+    bool poly_draw_chk    = false;
+    bool poly_draw_flip   = false;
+    bool line_draw        = false;
 };
 
 #endif // ATI_RAGE_H
