@@ -96,7 +96,7 @@ private:
     void advance_source_x();
     void advance_source_y();
     void blit_rect(uint32_t dst_width, uint32_t dst_height);
-    void process_host_data(uint64_t pixel, uint8_t size);
+    void process_host_data(uint32_t pixel, uint8_t size);
     void process_pixel(uint32_t pix, int dst_x, int dst_y, uint8_t mix);
     uint32_t fetch_source(int32_t src_x, int32_t src_y, uint8_t& mix, bool force_blitsrc = false);
     uint8_t get_bits_per_pel(uint8_t pix_width);
@@ -146,7 +146,7 @@ private:
     uint32_t src_width;
     uint32_t src_height;
 
-    uint64_t host_data;
+    uint32_t host_data;
     uint8_t  host_data_active;
     uint32_t host_data_req_bytes;
     uint32_t host_data_req_recv;
