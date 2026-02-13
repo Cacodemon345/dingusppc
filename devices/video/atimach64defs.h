@@ -343,6 +343,7 @@ enum {
         ATI_LOW_LATENCY_MODE    = 21,                                   // VT/GT
         ATI_CDE_PULLBACK        = 22,                                   // VT/GT
         ATI_MEM_PIX_WIDTH       = 24, ATI_MEM_PIX_WIDTH_size = 3,       // VT/GT
+        ATI_UPPER_APER_ENDIAN   = 26, ATI_UPPER_APER_ENDIAN_size = 2,   // VT/GT
         ATI_MEM_OE_SELECT       = 27, ATI_MEM_OE_SELECT_size = 2,       // VT/GT
 
     ATI_MEM_VGA_WP_SEL        = 0x02D, // 0x00B4
@@ -471,6 +472,9 @@ enum {
     ATI_Z_CNTL                = 0x053, // 0x014C
     ATI_ALPHA_TST_CNTL        = 0x054, // 0x0150
     ATI_SRC_OFF_PITCH         = 0x060, // 0x0180
+        ATI_SRC_OFFSET  =  0, ATI_SRC_OFFSET_size = 20,
+        ATI_SRC_PITCH   = 22, ATI_SRC_PITCH_size  = 10,
+
     ATI_SRC_X                 = 0x061, // 0x0184
     ATI_SRC_Y                 = 0x062, // 0x0188
     ATI_SRC_Y_X               = 0x063, // 0x018C
@@ -478,12 +482,15 @@ enum {
     ATI_SRC_HEIGHT1           = 0x065, // 0x0194
     ATI_SRC_HEIGHT1_WIDTH1    = 0x066, // 0x0198
     ATI_SRC_X_START           = 0x067, // 0x019C
+        ATI_SRC_X_START_pos = 0, ATI_SRC_X_START_size = 13,
     ATI_SRC_Y_START           = 0x068, // 0x01A0
+        ATI_SRC_Y_START_pos = 0, ATI_SRC_Y_START_size = 14,
     ATI_SRC_Y_X_START         = 0x069, // 0x01A4
     ATI_SRC_WIDTH2            = 0x06A, // 0x01A8
     ATI_SRC_HEIGHT2           = 0x06B, // 0x01AC
     ATI_SRC_HEIGHT2_WIDTH2    = 0x06C, // 0x01B0
     ATI_SRC_CNTL              = 0x06D, // 0x01B4
+        ATI_SRC_BLOCK_FILL_FCN = 13, ATI_SRC_BLOCK_FILL_FCN_size = 2,
     ATI_SCALE_OFF             = 0x070, // 0x01C0
     ATI_SCALE_WIDTH           = 0x077, // 0x01DC
     ATI_SCALE_HEIGHT          = 0x078, // 0x01E0
@@ -691,6 +698,10 @@ constexpr auto BE_FB_OFFSET  = 0x00800000U; // Offset to the big-endian frame bu
 constexpr auto MM_REGS_0_OFF = 0x007FFC00U; // offset to memory mapped registers, block 0
 constexpr auto MM_REGS_1_OFF = 0x007FF800U; // offset to memory mapped registers, block 1
 constexpr auto MM_REGS_2_OFF = 0x003FFC00U; // offset to memory mapped registers, 4MB aperture
+
+// Standalone register aperture.
+constexpr auto MM_STDL_REGS_0_OFF = 0x400U; // offset to memory mapped registers, block 0
+constexpr auto MM_STDL_REGS_1_OFF = 0x000U; // offset to memory mapped registers, block 1
 
 constexpr auto ATI_XTAL = 14318180.0f; // external crystal oscillator frequency
 

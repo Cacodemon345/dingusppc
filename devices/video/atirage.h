@@ -88,9 +88,18 @@ private:
     void change_one_bar(uint32_t &aperture, uint32_t aperture_size,
                         uint32_t aperture_new, int bar_num);
 
+    uint32_t perform_mix_op(uint32_t src, uint32_t dst, uint8_t mix);
     void begin_drawing(uint32_t initiator, uint32_t value);
     void draw_rect(uint32_t width, uint32_t height);
-    void fill_rect(uint32_t dst_width, uint32_t dst_height);
+    void draw_line(uint32_t length);
+    void advance_line();
+    void advance_source_x();
+    void advance_source_y();
+    void blit_rect(uint32_t dst_width, uint32_t dst_height);
+    void process_host_data(uint64_t pixel, uint8_t size);
+    void process_pixel(uint32_t pix, int dst_x, int dst_y, uint8_t mix);
+    uint32_t fetch_source(int32_t src_x, int32_t src_y, uint8_t& mix, bool force_blitsrc = false);
+    uint8_t get_bits_per_pel(uint8_t pix_width);
 
     uint32_t    regs[512] = {}; // internal registers
     uint8_t     plls[64]  = {}; // internal PLL registers
@@ -121,6 +130,38 @@ private:
     uint8_t     dac_mask     = 0;  // current DAC mask
     int         comp_index   = 0;  // current color component index
     uint8_t     color_buf[3] = {}; // buffer for storing DAC color components
+
+    // Accel state (for host-driven blits)
+    int32_t  dst_x_start;
+    int32_t  dst_y_start;
+    int32_t  dst_x;
+    int32_t  dst_y;
+    uint32_t dst_width;
+    uint32_t dst_height;
+
+    int32_t  src_x;
+    int32_t  src_y;
+    int32_t  src_x_start;
+    int32_t  src_y_start;
+    uint32_t src_width;
+    uint32_t src_height;
+
+    uint64_t host_data;
+    uint8_t  host_data_active;
+    uint32_t host_data_req_bytes;
+    uint32_t host_data_req_recv;
+
+    int      line_length  = 0;
+    int      line_pos     = 0;
+    uint32_t bres_error   = 0;
+    uint32_t bres_inc     = 0;
+    uint32_t bres_dec     = 0;
+    uint32_t host_skip    = 0;
+    bool poly_draw_chk    = false;
+    bool poly_draw_flip   = false;
+    bool line_draw        = false;
+    bool nonmono_host     = false;
+    bool prev_host_data   = false;
 };
 
 #endif // ATI_RAGE_H

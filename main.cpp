@@ -22,6 +22,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 // The main runfile - main.cpp
 // This is where the magic begins
 
+#define SDL_MAIN_HANDLED 1
+#include <SDL.h>
+
 #include <core/hostevents.h>
 #include <core/timermanager.h>
 #include <cpu/ppc/ppcdisasm.h>
@@ -103,7 +106,7 @@ void run_machine(
     uint32_t profiling_interval_ms
 );
 
-int main(int argc, char** argv) {
+int SDL_main(int argc, char** argv) {
 
 #ifdef CHECK_THREAD
     main_thread_id = pthread_self();
