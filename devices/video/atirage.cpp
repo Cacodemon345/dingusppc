@@ -1520,7 +1520,7 @@ void ATIRage::draw_line(uint32_t length)
             }
 
             if (draw) {
-                pix = fetch_source(src_x, src_y, mix);
+                pix = fetch_source(src_x, src_y, dst_x, dst_y, mix);
 
                 process_pixel(pix, dst_x, dst_y, mix);
             }
@@ -1752,7 +1752,7 @@ void ATIRage::process_host_data(uint32_t pixel, uint8_t size)
             draw = !this->poly_draw_chk;
             if (this->poly_draw_chk) {
                 uint8_t dummy_pix = 0;
-                uint32_t poly_pix = fetch_source(this->src_x_start + (src_x * xsign), this->src_y_start + (src_y * ysign), dummy_pix, true);
+                uint32_t poly_pix = fetch_source(this->src_x_start + (src_x * xsign), this->src_y_start + (src_y * ysign), dst_x_start + (dst_x * xsign), dst_y_start + (dst_y * ysign), dummy_pix, true);
                 if (poly_pix) {
                     this->poly_draw_flip ^= 1;
                 }
@@ -1760,7 +1760,7 @@ void ATIRage::process_host_data(uint32_t pixel, uint8_t size)
             }
         }
         if (draw) {
-            auto pix = fetch_source(this->src_x_start + (src_x * xsign), this->src_y_start + (src_y * ysign), mix);
+            auto pix = fetch_source(this->src_x_start + (src_x * xsign), this->src_y_start + (src_y * ysign), dst_x_start + (dst_x * xsign), dst_y_start + (dst_y * ysign), mix);
             process_pixel(pix, dst_x_start + (dst_x * xsign), dst_y_start + (dst_y * ysign), mix);
         }
         if (!nonmono_host && !(this->regs[ATI_DP_PIX_WIDTH] & (1 << ATI_DP_BYTE_PIX_ORDER)))
@@ -1808,7 +1808,7 @@ void ATIRage::process_host_data(uint32_t pixel, uint8_t size)
     }
 }
 
-uint32_t ATIRage::fetch_source(int32_t s_x, int32_t s_y, uint8_t& mix, bool force_blitsrc)
+uint32_t ATIRage::fetch_source(int32_t s_x, int32_t s_y, int dst_x, int dst_y, uint8_t& mix, bool force_blitsrc)
 {
     /*
     Monochrome sources do not have a separate pitch and offset register.
@@ -1842,7 +1842,7 @@ uint32_t ATIRage::fetch_source(int32_t s_x, int32_t s_y, uint8_t& mix, bool forc
         switch (mono_src) {
             case 1: {
                 uint64_t mono_val = regs[ATI_PAT_REG0] | ((uint64_t)regs[ATI_PAT_REG1]) << 32ull;
-                src_sel = mono_val & !!(1ull << (((s_y & 7) * 8) + (7 - (s_x & 7))));
+                src_sel = !!(mono_val & (1ull << (((dst_y & 7) * 8) + (7 - (dst_x & 7)))));
                 break;
             }
             case 2: {
@@ -2099,7 +2099,7 @@ void ATIRage::blit_rect(uint32_t dst_width, uint32_t dst_height)
 
             if (this->poly_draw_chk) {
                 uint8_t dummy_pix = 0;
-                uint32_t poly_pix = fetch_source(this->src_x_start + (src_x * xsign), this->src_y_start + (src_y * ysign), dummy_pix, true);
+                uint32_t poly_pix = fetch_source(this->src_x_start + (src_x * xsign), this->src_y_start + (src_y * ysign), xx, yy, dummy_pix, true);
                 if (poly_pix) {
                     this->poly_draw_flip ^= 1;
                 }
@@ -2107,7 +2107,7 @@ void ATIRage::blit_rect(uint32_t dst_width, uint32_t dst_height)
             }
 
             if (draw) {
-                pix = fetch_source(this->src_x_start + (src_x * xsign), this->src_y_start + (src_y * ysign), mix);
+                pix = fetch_source(this->src_x_start + (src_x * xsign), this->src_y_start + (src_y * ysign), xx, yy, mix);
 
                 process_pixel(pix, xx, yy, mix);
             }
