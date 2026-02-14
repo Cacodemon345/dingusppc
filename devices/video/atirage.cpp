@@ -1733,10 +1733,6 @@ void ATIRage::process_host_data(uint32_t pixel, uint8_t size)
     this->draw_fb = true;
     auto host_data_pos = size;
 
-    if (host_pix_fmt == 0) {
-        LOG_F(WARNING, "%s: Monochrome blit (0x%08X, %d)", this->name.c_str(), (uint32_t)pixel, size); 
-    }
-
     auto needed_bits = get_bits_per_pel(host_pix_fmt);
     if (needed_bits == 1 && (this->regs[ATI_HOST_CNTL] & (1 << ATI_HOST_BYTE_ALIGN)))
         needed_bits = 8;
